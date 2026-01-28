@@ -324,9 +324,15 @@ class DockerSandboxService(SandboxService):
         # Prepare environment variables
         env_vars = sandbox_spec.initial_env.copy()
         env_vars[SESSION_API_KEY_VARIABLE] = session_api_key
-        env_vars[WEBHOOK_CALLBACK_VARIABLE] = (
-            f'http://host.docker.internal:{self.host_port}/api/v1/webhooks'
-        )
+
+        # Use web_url for webhook callback if configured (e.g., in Codespaces)
+        # Otherwise fall back to host.docker.internal for local development
+        if self.web_url:
+            env_vars[WEBHOOK_CALLBACK_VARIABLE] = f'{self.web_url}/api/v1/webhooks'
+        else:
+            env_vars[WEBHOOK_CALLBACK_VARIABLE] = (
+                f'http://host.docker.internal:{self.host_port}/api/v1/webhooks'
+            )
 
         # Set CORS origins for remote browser access when web_url is configured.
         # This allows the agent-server container to accept requests from the
