@@ -40,7 +40,7 @@ from openhands.app_server.utils.docker_utils import (
 )
 
 _logger = logging.getLogger(__name__)
-STARTUP_GRACE_SECONDS = 15
+STARTUP_GRACE_SECONDS = 45
 
 
 class VolumeMount(BaseModel):
