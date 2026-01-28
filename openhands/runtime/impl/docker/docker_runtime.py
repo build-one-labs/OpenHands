@@ -407,14 +407,21 @@ class DockerRuntime(ActionExecutionClient):
                 self._find_available_port_with_lock(VSCODE_PORT_RANGE)
             )
 
-        # Allocate app ports with locking
-        app_port_1, app_lock_1 = self._find_available_port_with_lock(APP_PORT_RANGE_1)
-        app_port_2, app_lock_2 = self._find_available_port_with_lock(APP_PORT_RANGE_2)
+        # Fixed ports patch - Use environment-configured fixed ports
+        fixed_port_1 = os.environ.get('APP_PORT_1')
+        fixed_port_2 = os.environ.get('APP_PORT_2')
 
-        self._app_ports = [app_port_1, app_port_2]
-        self._app_port_locks = [
-            lock for lock in [app_lock_1, app_lock_2] if lock is not None
-        ]
+        if fixed_port_1 and fixed_port_2:
+            self._app_ports = [int(fixed_port_1), int(fixed_port_2)]
+            self._app_port_locks = []
+        else:
+            # Fallback to dynamic port allocation
+            app_port_1, app_lock_1 = self._find_available_port_with_lock(APP_PORT_RANGE_1)
+            app_port_2, app_lock_2 = self._find_available_port_with_lock(APP_PORT_RANGE_2)
+            self._app_ports = [app_port_1, app_port_2]
+            self._app_port_locks = [
+                lock for lock in [app_lock_1, app_lock_2] if lock is not None
+            ]
 
         self.api_url = f'{self.config.sandbox.local_runtime_url}:{self._container_port}'
 
@@ -714,9 +721,17 @@ class DockerRuntime(ActionExecutionClient):
     def web_hosts(self) -> dict[str, int]:
         hosts: dict[str, int] = {}
 
-        host_addr = os.environ.get('DOCKER_HOST_ADDR', 'localhost')
-        for port in self._app_ports:
-            hosts[f'http://{host_addr}:{port}'] = port
+        # Check if running in GitHub Codespaces
+        codespace_name = os.environ.get('CODESPACE_NAME')
+        codespace_domain = os.environ.get('GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN', 'app.github.dev')
+
+        if codespace_name:
+            for port in self._app_ports:
+                hosts[f'https://{codespace_name}-{port}.{codespace_domain}'] = port
+        else:
+            host_addr = os.environ.get('DOCKER_HOST_ADDR', 'localhost')
+            for port in self._app_ports:
+                hosts[f'http://{host_addr}:{port}'] = port
 
         return hosts
 

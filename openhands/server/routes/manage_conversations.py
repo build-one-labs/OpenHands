@@ -1535,7 +1535,7 @@ def _to_conversation_info(app_conversation: AppConversation) -> ConversationInfo
         session_api_key=app_conversation.session_api_key,
         created_at=app_conversation.created_at,
         pr_number=app_conversation.pr_number,
-        conversation_version='V1',
+        conversation_version='V0',
         sub_conversation_ids=[
             sub_id.hex for sub_id in app_conversation.sub_conversation_ids
         ],

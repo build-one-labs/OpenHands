@@ -9,7 +9,13 @@ export function extractBaseHost(
   if (conversationUrl && !conversationUrl.startsWith("/")) {
     try {
       const url = new URL(conversationUrl);
-      return url.host; // e.g., "localhost:3000"
+      // When behind a reverse proxy (e.g., Codespaces, Caddy), the backend
+      // returns localhost URLs that aren't reachable from the browser.
+      // Fall back to window.location.host in that case.
+      if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+        return window.location.host;
+      }
+      return url.host;
     } catch {
       return window.location.host;
     }

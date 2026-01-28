@@ -74,7 +74,10 @@ export const useCreateConversationAndSubscribeMultiple = () => {
 
       let { baseUrl } = conversationData;
       if (url && !url.startsWith("/")) {
-        baseUrl = new URL(url).host;
+        const u = new URL(url);
+        baseUrl = (u.hostname === "localhost" || u.hostname === "127.0.0.1")
+          ? window.location.host
+          : u.host;
       }
 
       if (status === "RUNNING") {
@@ -157,7 +160,9 @@ export const useCreateConversationAndSubscribeMultiple = () => {
             let socketPath: string;
             if (data?.url && !data.url.startsWith("/")) {
               const u = new URL(data.url);
-              baseUrl = u.host;
+              baseUrl = (u.hostname === "localhost" || u.hostname === "127.0.0.1")
+                ? window.location.host
+                : u.host;
               const pathBeforeApi =
                 u.pathname.split("/api/conversations")[0] || "/";
               socketPath = `${pathBeforeApi.replace(/\/$/, "")}/socket.io`;

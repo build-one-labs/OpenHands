@@ -44,6 +44,16 @@ class ConversationService {
   static getConversationUrl(conversationId: string): string {
     if (this.currentConversation?.conversation_id === conversationId) {
       if (this.currentConversation.url) {
+        // When behind a reverse proxy (e.g., Codespaces), the backend returns
+        // localhost URLs that aren't reachable from the browser.
+        try {
+          const u = new URL(this.currentConversation.url);
+          if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
+            return `${window.location.origin}${u.pathname}`;
+          }
+        } catch {
+          // fall through
+        }
         return this.currentConversation.url;
       }
     }

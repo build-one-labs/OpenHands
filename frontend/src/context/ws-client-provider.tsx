@@ -376,7 +376,13 @@ export function WsClientProvider({
     let socketPath: string;
     if (conversation.url && !conversation.url.startsWith("/")) {
       const u = new URL(conversation.url);
-      baseUrl = u.host;
+      // When behind a reverse proxy (e.g., Codespaces, Caddy), the backend
+      // returns localhost URLs that aren't reachable from the browser.
+      if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
+        baseUrl = window.location.host;
+      } else {
+        baseUrl = u.host;
+      }
       const pathBeforeApi = u.pathname.split("/api/conversations")[0] || "/";
       // Socket.IO server default path is /socket.io; prefix with pathBeforeApi for path mode
       socketPath = `${pathBeforeApi.replace(/\/$/, "")}/socket.io`;
