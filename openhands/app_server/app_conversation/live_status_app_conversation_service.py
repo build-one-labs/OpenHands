@@ -390,6 +390,14 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 self.httpx_client,
             )
 
+            # Register sandbox MCP tools on the centralized MCP server
+            # (background, fire-and-forget, idempotent)
+            from openhands.server.routes.mcp import register_sandbox_tools
+
+            asyncio.create_task(
+                register_sandbox_tools(agent_server_url, sandbox.session_api_key)
+            )
+
             # Update the start task
             task.status = AppConversationStartTaskStatus.READY
             task.app_conversation_id = info.id

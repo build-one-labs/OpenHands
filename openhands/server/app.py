@@ -25,7 +25,6 @@ from fastapi.responses import JSONResponse
 import openhands.agenthub  # noqa F401 (we import this to get the agents registered)
 from openhands.app_server import (
     http_proxy_router,
-    mcp_proxy_router,
     v1_router,
     vscode_proxy_router,
     ws_proxy_router,
@@ -112,7 +111,6 @@ if server_config.enable_v1:
     app.include_router(v1_router.router)
     app.include_router(ws_proxy_router.router)
     app.include_router(vscode_proxy_router.router)
-    app.include_router(mcp_proxy_router.router)
 app.include_router(trajectory_router)
 # HTTP proxy for sandbox API calls — registered LAST so all specific routes
 # (V0 and V1) take priority over the catch-all /api/conversations/{id}/{path}

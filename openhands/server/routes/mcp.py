@@ -1,10 +1,12 @@
+import json
 import os
 import re
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_request
+from fastmcp.tools.tool import Tool, ToolResult
 from pydantic import Field
 
 from openhands.core.logger import openhands_logger as logger
@@ -16,6 +18,7 @@ from openhands.integrations.github.github_service import GithubServiceImpl
 from openhands.integrations.gitlab.gitlab_service import GitLabServiceImpl
 from openhands.integrations.provider import ProviderToken
 from openhands.integrations.service_types import GitService, ProviderType
+from openhands.mcp.client import MCPClient
 from openhands.server.shared import ConversationStoreImpl, config, server_config
 from openhands.server.types import AppMode
 from openhands.server.user_auth import (
@@ -354,3 +357,136 @@ async def create_azure_devops_pr(
         raise ToolError(str(error))
 
     return response
+
+
+async def _connect_to_sandbox_mcp(conversation_id: str) -> MCPClient:
+    """Connect to a sandbox's MCP endpoint and return the MCPClient.
+
+    Resolves the sandbox endpoint for the given conversation, then connects
+    via MCPClient using SSE transport with the session API key.
+    """
+    from openhands.app_server.mcp_proxy_router import resolve_sandbox_endpoint
+    from openhands.core.config.mcp_config import MCPSSEServerConfig
+
+    request = get_http_request()
+
+    endpoint = await resolve_sandbox_endpoint(conversation_id, request)
+    if endpoint is None:
+        raise ToolError(
+            f'Could not resolve sandbox for conversation {conversation_id}. '
+            'Ensure the conversation exists and its sandbox is running.'
+        )
+
+    mcp_url = f'{endpoint.base_url}/mcp/sse'
+    sandbox_server_config = MCPSSEServerConfig(
+        url=mcp_url, api_key=endpoint.session_api_key
+    )
+
+    client = MCPClient()
+    try:
+        await client.connect_http(sandbox_server_config)
+    except Exception as e:
+        raise ToolError(f'Failed to connect to sandbox MCP server: {e}')
+
+    return client
+
+
+class SandboxProxyTool(Tool):
+    """A tool that proxies calls to a sandbox's MCP server.
+
+    Dynamically registered with the centralized MCP server, each instance
+    wraps one sandbox tool and adds ``conversation_id`` as an extra required
+    parameter so callers can target any conversation's sandbox.
+    """
+
+    sandbox_tool_name: str
+
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        conversation_id = arguments.pop('conversation_id', None)
+        if not conversation_id:
+            raise ToolError('conversation_id is required')
+
+        client = await _connect_to_sandbox_mcp(conversation_id)
+
+        if self.sandbox_tool_name not in client.tool_map:
+            available = [t.name for t in client.tools]
+            raise ToolError(
+                f'Tool "{self.sandbox_tool_name}" not found in sandbox. '
+                f'Available tools: {available}'
+            )
+
+        try:
+            result = await client.call_tool(self.sandbox_tool_name, arguments)
+        except Exception as e:
+            raise ToolError(f'Error calling tool "{self.sandbox_tool_name}": {e}')
+
+        content_items = [item.model_dump() for item in result.content]
+        return ToolResult(content=json.dumps(content_items))
+
+
+def _build_proxy_parameters(original_schema: dict[str, Any]) -> dict[str, Any]:
+    """Add ``conversation_id`` to an existing JSON Schema ``properties`` block."""
+    schema = dict(original_schema)
+    properties = dict(schema.get('properties', {}))
+    properties['conversation_id'] = {
+        'type': 'string',
+        'description': 'The conversation ID whose sandbox to target',
+    }
+    schema['properties'] = properties
+    required = list(schema.get('required', []))
+    if 'conversation_id' not in required:
+        required.insert(0, 'conversation_id')
+    schema['required'] = required
+    return schema
+
+
+# Track which sandbox tools have already been registered.
+_registered_sandbox_tools: set[str] = set()
+
+
+async def register_sandbox_tools(
+    agent_server_url: str, session_api_key: str | None
+) -> None:
+    """Discover tools from a sandbox and register them on the centralized MCP server.
+
+    Called automatically in the background when a conversation starts.
+    Connects to the sandbox's ``/mcp/sse`` endpoint, lists its tools, and
+    registers each one as a first-class tool (with an added
+    ``conversation_id`` parameter) on the centralized ``mcp_server``.
+
+    Since all sandboxes expose the same tool set this is idempotent — only
+    the first call actually registers tools; subsequent calls are no-ops.
+    """
+    from openhands.core.config.mcp_config import MCPSSEServerConfig
+
+    if _registered_sandbox_tools:
+        return
+
+    mcp_url = f'{agent_server_url}/mcp/sse'
+    sandbox_server_config = MCPSSEServerConfig(url=mcp_url, api_key=session_api_key)
+
+    client = MCPClient()
+    try:
+        await client.connect_http(sandbox_server_config)
+    except Exception:
+        logger.exception('Failed to connect to sandbox MCP for tool registration')
+        return
+
+    registered: list[str] = []
+    for tool in client.tools:
+        if tool.name in _registered_sandbox_tools:
+            continue
+
+        proxy_params = _build_proxy_parameters(tool.inputSchema or {})
+        proxy_tool = SandboxProxyTool(
+            name=tool.name,
+            description=tool.description or '',
+            parameters=proxy_params,
+            sandbox_tool_name=tool.name,
+        )
+        mcp_server.add_tool(proxy_tool)
+        _registered_sandbox_tools.add(tool.name)
+        registered.append(tool.name)
+
+    if registered:
+        logger.info(f'Registered sandbox proxy tools: {registered}')
