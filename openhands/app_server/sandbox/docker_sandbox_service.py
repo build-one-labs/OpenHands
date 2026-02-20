@@ -1,10 +1,8 @@
 import asyncio
-import fcntl
 import logging
 import os
 import shutil
 import socket
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import AsyncGenerator
@@ -13,7 +11,6 @@ import base62
 import docker
 import httpx
 from docker.errors import APIError, NotFound
-from docker.types import DriverConfig, Mount
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,8 +47,6 @@ STARTUP_GRACE_SECONDS = 60
 _DOCKER_SOCKET = '/var/run/docker.sock'
 _PACKAGE_CACHE_VOLUME = 'openhands-package-cache'
 _PACKAGE_CACHE_PATH = '/opt/package-cache'
-_PACKAGE_CACHE_BASE = '/var/lib/openhands/cache/package-cache/base'
-_PACKAGE_CACHE_OVERLAYS = '/var/lib/openhands/cache/package-cache/sandboxes'
 
 
 def _docker_socket_group(volumes: dict) -> list[int]:
@@ -117,11 +112,7 @@ class DockerSandboxService(SandboxService):
     app_hostname: str | None = None
     container_labels: dict[str, str] = field(default_factory=dict)
     privileged: bool = False
-    package_cache_mode: str = 'overlay'
-    package_cache_base_dir: str = _PACKAGE_CACHE_BASE
-    package_cache_promote: bool = True
     registry_mirror_url: str | None = None
-    _last_stale_cleanup: float = field(default=0.0, repr=False)
     traefik_network: str | None = None
     traefik_domain: str | None = None
     traefik_entrypoints: str = 'web'
@@ -217,44 +208,6 @@ class DockerSandboxService(SandboxService):
                 return
             await asyncio.sleep(1)
         _logger.warning(f'dockerd failed to start in container {container.name}')
-
-    def _build_package_cache_mount(self, container_name: str) -> Mount:
-        """Build an overlayfs Mount for the package cache.
-
-        Creates a per-sandbox overlay with a shared read-only base layer and an
-        isolated writable upper layer.  This follows the same pattern used by
-        ``docker_runtime.py:_process_overlay_mounts``.
-        """
-        base_dir = self.package_cache_base_dir
-        for sub in ('yarn', 'npm', 'pip'):
-            os.makedirs(os.path.join(base_dir, sub), exist_ok=True)
-
-        overlay_dir = os.path.join(_PACKAGE_CACHE_OVERLAYS, container_name)
-        upper_dir = os.path.join(overlay_dir, 'upper')
-        work_dir = os.path.join(overlay_dir, 'work')
-        os.makedirs(upper_dir, exist_ok=True)
-        os.makedirs(work_dir, exist_ok=True)
-
-        driver_cfg = DriverConfig(
-            name='local',
-            options={
-                'type': 'overlay',
-                'device': 'overlay',
-                'o': f'lowerdir={base_dir},upperdir={upper_dir},workdir={work_dir}',
-            },
-        )
-
-        return Mount(
-            target=_PACKAGE_CACHE_PATH,
-            source='',
-            type='volume',
-            labels={
-                'app': 'openhands',
-                'role': 'package-cache',
-                'container': container_name,
-            },
-            driver_config=driver_cfg,
-        )
 
     def _schedule_codespace_port_visibility(
         self, port_mappings: dict[int, int]
@@ -718,31 +671,11 @@ class DockerSandboxService(SandboxService):
             for mount in self.mounts
         }
 
-        # Build package cache mount based on configured mode
-        overlay_mounts: list[Mount] = []
-        use_overlay = False
-        if self.package_cache_mode == 'overlay':
-            try:
-                overlay_mounts.append(self._build_package_cache_mount(container_name))
-                use_overlay = True
-            except Exception:
-                _logger.warning(
-                    'Failed to prepare overlay package cache mount; '
-                    'falling back to shared volume',
-                    exc_info=True,
-                )
-                # Fall through to shared mode
-        if self.package_cache_mode == 'shared' or (
-            self.package_cache_mode == 'overlay' and not use_overlay
-        ):
-            volumes[_PACKAGE_CACHE_VOLUME] = {
-                'bind': _PACKAGE_CACHE_PATH,
-                'mode': 'rw',
-            }
-        # mode='none': no cache mount at all
-
-        # Periodically clean up stale overlay directories
-        self._cleanup_stale_overlays()
+        # Mount the shared package cache volume
+        volumes[_PACKAGE_CACHE_VOLUME] = {
+            'bind': _PACKAGE_CACHE_PATH,
+            'mode': 'rw',
+        }
 
         try:
             # If /var/run/docker.sock is mounted, grant the container user
@@ -774,15 +707,13 @@ class DockerSandboxService(SandboxService):
                 network=self.network if self.network else None,
                 group_add=group_add if group_add else None,
                 privileged=self.privileged if self.privileged else None,
-                mounts=overlay_mounts if overlay_mounts else None,
             )
 
             # Ensure the package cache is writable by the non-root container
-            # user (named volumes and overlay mounts start root-owned).
-            if self.package_cache_mode != 'none':
-                container.exec_run(
-                    f'chown openhands:openhands {_PACKAGE_CACHE_PATH}', user='root'
-                )
+            # user (named volumes start root-owned).
+            container.exec_run(
+                f'chown openhands:openhands {_PACKAGE_CACHE_PATH}', user='root'
+            )
 
             # Connect to the Traefik network so Traefik can discover
             # and route to this container's worker ports.
@@ -845,73 +776,6 @@ class DockerSandboxService(SandboxService):
             return sandbox_info
 
         except APIError as e:
-            # If the overlay mount caused the failure, retry with shared volume
-            if use_overlay:
-                _logger.warning(
-                    f'Overlay mount failed for {container_name}, '
-                    f'falling back to shared volume: {e}'
-                )
-                self._cleanup_overlay_dirs(container_name)
-                overlay_mounts.clear()
-                volumes[_PACKAGE_CACHE_VOLUME] = {
-                    'bind': _PACKAGE_CACHE_PATH,
-                    'mode': 'rw',
-                }
-                # Remove the partially-created container before retrying
-                try:
-                    failed = self.docker_client.containers.get(container_name)
-                    failed.remove(force=True)
-                except (NotFound, APIError):
-                    pass
-                try:
-                    container = self.docker_client.containers.run(  # type: ignore[call-overload, misc]
-                        image=sandbox_spec.id,
-                        command=sandbox_spec.command,
-                        remove=False,
-                        name=container_name,
-                        environment=env_vars,
-                        ports=port_mappings,
-                        volumes=volumes,
-                        working_dir=sandbox_spec.working_dir,
-                        labels=labels,
-                        detach=True,
-                        init=True,
-                        extra_hosts=self.extra_hosts if self.extra_hosts else None,
-                        network=self.network if self.network else None,
-                        group_add=group_add if group_add else None,
-                        privileged=self.privileged if self.privileged else None,
-                    )
-                    container.exec_run(
-                        f'chown openhands:openhands {_PACKAGE_CACHE_PATH}',
-                        user='root',
-                    )
-                except APIError as retry_err:
-                    _logger.error(
-                        f'Failed to start container {container_name} '
-                        f'(shared fallback): {retry_err}'
-                    )
-                    raise SandboxError(
-                        f'Failed to start container: {retry_err}'
-                    ) from retry_err
-                else:
-                    # Continue with the rest of startup using the fallback container
-                    if self.traefik_network:
-                        try:
-                            traefik_net = self.docker_client.networks.get(
-                                self.traefik_network
-                            )
-                            traefik_net.connect(container)
-                        except Exception as te:
-                            _logger.error(
-                                f'Failed to connect {container_name} to '
-                                f'Traefik network: {te}'
-                            )
-                    if self.privileged:
-                        await self._start_dockerd(container)
-                    sandbox_info = await self._container_to_sandbox_info(container)
-                    assert sandbox_info is not None
-                    self._schedule_codespace_port_visibility(port_mappings)
-                    return sandbox_info
             _logger.error(f'Failed to start container {container_name}: {e}')
             raise SandboxError(f'Failed to start container: {e}')
 
@@ -1034,103 +898,9 @@ class DockerSandboxService(SandboxService):
                 # Volume might not exist or already removed
                 pass
 
-            # Promote cached packages and clean up overlay directories
-            if self.package_cache_mode == 'overlay':
-                self._promote_package_cache(sandbox_id)
-                self._cleanup_overlay_dirs(sandbox_id)
-
             return True
         except (NotFound, APIError):
             return False
-
-    def _promote_package_cache(self, container_name: str) -> None:
-        """Merge new entries from the sandbox overlay upper layer to the shared base.
-
-        Uses an exclusive file lock to prevent concurrent promotions from
-        corrupting the base layer.  Best-effort: failures are logged but never
-        block sandbox deletion.
-        """
-        if not self.package_cache_promote:
-            return
-
-        upper_dir = os.path.join(_PACKAGE_CACHE_OVERLAYS, container_name, 'upper')
-        if not os.path.isdir(upper_dir):
-            return
-
-        base_dir = self.package_cache_base_dir
-        lock_path = os.path.join(base_dir, '.promote.lock')
-
-        try:
-            os.makedirs(base_dir, exist_ok=True)
-            with open(lock_path, 'w') as lock_fd:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX)
-                try:
-                    for dirpath, dirnames, filenames in os.walk(upper_dir):
-                        # Skip overlayfs whiteout entries
-                        dirnames[:] = [d for d in dirnames if not d.startswith('.wh.')]
-                        rel = os.path.relpath(dirpath, upper_dir)
-                        dest_dir = os.path.join(base_dir, rel)
-                        os.makedirs(dest_dir, exist_ok=True)
-                        for fname in filenames:
-                            if fname.startswith('.wh.'):
-                                continue
-                            src = os.path.join(dirpath, fname)
-                            dst = os.path.join(dest_dir, fname)
-                            if not os.path.exists(dst):
-                                try:
-                                    shutil.copy2(src, dst)
-                                except OSError:
-                                    pass
-                finally:
-                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
-        except Exception:
-            _logger.warning(
-                f'Failed to promote package cache for {container_name}',
-                exc_info=True,
-            )
-
-    def _cleanup_overlay_dirs(self, container_name: str) -> None:
-        """Remove the per-sandbox overlay directory."""
-        overlay_dir = os.path.join(_PACKAGE_CACHE_OVERLAYS, container_name)
-        try:
-            shutil.rmtree(overlay_dir, ignore_errors=True)
-        except Exception:
-            _logger.warning(
-                f'Failed to clean up overlay dirs for {container_name}',
-                exc_info=True,
-            )
-
-    def _cleanup_stale_overlays(self) -> None:
-        """Remove overlay directories left over from force-removed containers.
-
-        Rate-limited to run at most once every 5 minutes.
-        """
-        now = time.monotonic()
-        if now - self._last_stale_cleanup < 300:
-            return
-        self._last_stale_cleanup = now
-
-        if not os.path.isdir(_PACKAGE_CACHE_OVERLAYS):
-            return
-
-        try:
-            running_names = {
-                c.name
-                for c in self.docker_client.containers.list(all=True)
-                if c.name and c.name.startswith(self.container_name_prefix)
-            }
-        except Exception:
-            return
-
-        try:
-            for entry in os.listdir(_PACKAGE_CACHE_OVERLAYS):
-                if entry not in running_names:
-                    stale = os.path.join(_PACKAGE_CACHE_OVERLAYS, entry)
-                    if os.path.isdir(stale):
-                        _logger.info(f'Removing stale overlay dir: {entry}')
-                        shutil.rmtree(stale, ignore_errors=True)
-        except Exception:
-            _logger.warning('Failed to clean stale overlay dirs', exc_info=True)
 
 
 class DockerSandboxServiceInjector(SandboxServiceInjector):
@@ -1273,32 +1043,6 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'Configure via OH_SANDBOX__PRIVILEGED environment variable.'
         ),
     )
-    package_cache_mode: str = Field(
-        default='overlay',
-        description=(
-            'Package cache mount strategy: "overlay" (per-sandbox overlayfs, '
-            'concurrency-safe), "shared" (single rw named volume), '
-            'or "none" (no cache mount). Overlay requires a host filesystem '
-            'that supports overlayfs (ext4/xfs). Falls back to shared '
-            'automatically if overlay mount fails. '
-            'Configure via OH_SANDBOX__PACKAGE_CACHE_MODE environment variable.'
-        ),
-    )
-    package_cache_base_dir: str = Field(
-        default=_PACKAGE_CACHE_BASE,
-        description=(
-            'Host directory for the shared base layer of the overlay package cache. '
-            'Configure via OH_SANDBOX__PACKAGE_CACHE_BASE_DIR environment variable.'
-        ),
-    )
-    package_cache_promote: bool = Field(
-        default=True,
-        description=(
-            'Whether to promote new cache entries from deleted sandboxes back '
-            'to the shared base layer. '
-            'Configure via OH_SANDBOX__PACKAGE_CACHE_PROMOTE environment variable.'
-        ),
-    )
     dind_registry_cache: bool = Field(
         default=False,
         description=(
@@ -1407,9 +1151,6 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 container_labels=self.container_labels,
                 startup_grace_seconds=self.startup_grace_seconds,
                 privileged=self.privileged,
-                package_cache_mode=self.package_cache_mode,
-                package_cache_base_dir=self.package_cache_base_dir,
-                package_cache_promote=self.package_cache_promote,
                 registry_mirror_url=getattr(self, '_registry_mirror_url', None),
                 traefik_network=self.traefik_network,
                 traefik_domain=self.traefik_domain,

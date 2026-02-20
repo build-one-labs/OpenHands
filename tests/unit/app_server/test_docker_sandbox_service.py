@@ -1203,7 +1203,6 @@ class TestDockerSandboxServiceInjectorFromEnv:
 
     def test_config_from_env_with_sandbox_host_port(self):
         """Test that SANDBOX_HOST_PORT environment variable is respected."""
-        import os
         from unittest.mock import patch
 
         env_vars = {
@@ -1223,7 +1222,6 @@ class TestDockerSandboxServiceInjectorFromEnv:
 
     def test_config_from_env_with_sandbox_container_url_pattern(self):
         """Test that SANDBOX_CONTAINER_URL_PATTERN environment variable is respected."""
-        import os
         from unittest.mock import patch
 
         env_vars = {
@@ -1243,7 +1241,6 @@ class TestDockerSandboxServiceInjectorFromEnv:
 
     def test_config_from_env_with_both_sandbox_vars(self):
         """Test that both SANDBOX_HOST_PORT and SANDBOX_CONTAINER_URL_PATTERN work together."""
-        import os
         from unittest.mock import patch
 
         env_vars = {
@@ -1267,150 +1264,10 @@ class TestDockerSandboxServiceInjectorFromEnv:
 class TestPackageCacheOverlay:
     """Test cases for overlay-based package cache mounts."""
 
-    def test_build_package_cache_mount_creates_dirs(self, tmp_path):
-        """Test that _build_package_cache_mount creates required directories."""
-        from docker.types import Mount
-
-        base_dir = str(tmp_path / 'base')
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=MagicMock(),
-            package_cache_mode='overlay',
-            package_cache_base_dir=base_dir,
-        )
-
-        with patch(
-            'openhands.app_server.sandbox.docker_sandbox_service._PACKAGE_CACHE_OVERLAYS',
-            str(tmp_path / 'overlays'),
-        ):
-            mount = service._build_package_cache_mount('test-container')
-
-        assert isinstance(mount, Mount)
-        # Verify base cache subdirectories were created
-        assert (tmp_path / 'base' / 'yarn').is_dir()
-        assert (tmp_path / 'base' / 'npm').is_dir()
-        assert (tmp_path / 'base' / 'pip').is_dir()
-        # Verify per-sandbox overlay dirs were created
-        assert (tmp_path / 'overlays' / 'test-container' / 'upper').is_dir()
-        assert (tmp_path / 'overlays' / 'test-container' / 'work').is_dir()
-
-    def test_build_package_cache_mount_overlay_options(self, tmp_path):
-        """Test that the overlay Mount has correct DriverConfig options."""
-        base_dir = str(tmp_path / 'base')
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=MagicMock(),
-            package_cache_base_dir=base_dir,
-        )
-
-        overlays_dir = str(tmp_path / 'overlays')
-        with patch(
-            'openhands.app_server.sandbox.docker_sandbox_service._PACKAGE_CACHE_OVERLAYS',
-            overlays_dir,
-        ):
-            mount = service._build_package_cache_mount('my-sandbox')
-
-        # Verify target path inside container
-        assert mount['Target'] == '/opt/package-cache'
-        assert mount['Type'] == 'volume'
-        # Verify driver config
-        driver_cfg = mount['VolumeOptions']['DriverConfig']
-        assert driver_cfg['Name'] == 'local'
-        opts = driver_cfg['Options']
-        assert opts['type'] == 'overlay'
-        assert opts['device'] == 'overlay'
-        assert f'lowerdir={base_dir}' in opts['o']
-        assert 'upperdir=' in opts['o']
-        assert 'workdir=' in opts['o']
-
     @patch('openhands.app_server.sandbox.docker_sandbox_service.base62.encodebytes')
     @patch('os.urandom')
-    async def test_start_sandbox_overlay_mode(
-        self, mock_urandom, mock_encodebytes, tmp_path
-    ):
-        """Test that start_sandbox uses overlay mount when mode='overlay'."""
-        mock_urandom.side_effect = [b'container_id', b'session_key']
-        mock_encodebytes.side_effect = ['test_id', 'test_key']
-
-        mock_container = MagicMock()
-        mock_container.name = 'oh-test-test_id'
-        mock_container.status = 'running'
-        mock_container.image.tags = ['test-image:latest']
-        mock_container.attrs = {
-            'Created': '2024-01-15T10:30:00.000000000Z',
-            'Config': {'Env': ['OH_SESSION_API_KEYS_0=test_key']},
-            'NetworkSettings': {'Ports': {}},
-        }
-
-        mock_client = MagicMock()
-        mock_client.containers.run.return_value = mock_container
-        mock_client.containers.list.return_value = []
-
-        base_dir = str(tmp_path / 'base')
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[
-                ExposedPort(
-                    name=AGENT_SERVER, description='Agent', container_port=8000
-                ),
-            ],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=mock_client,
-            package_cache_mode='overlay',
-            package_cache_base_dir=base_dir,
-        )
-        service.sandbox_spec_service.get_default_sandbox_spec.return_value = MagicMock(
-            id='test-image:latest',
-            initial_env={},
-            working_dir='/workspace',
-            command=None,
-        )
-
-        with (
-            patch.object(service, '_find_unused_port', return_value=12345),
-            patch.object(service, 'pause_old_sandboxes', return_value=[]),
-            patch(
-                'openhands.app_server.sandbox.docker_sandbox_service._PACKAGE_CACHE_OVERLAYS',
-                str(tmp_path / 'overlays'),
-            ),
-        ):
-            await service.start_sandbox()
-
-        call_args = mock_client.containers.run.call_args
-        # Should NOT have shared volume in volumes dict
-        volumes = call_args[1]['volumes']
-        assert 'openhands-package-cache' not in volumes
-        # Should have overlay mount
-        mounts = call_args[1].get('mounts')
-        assert mounts is not None
-        assert len(mounts) == 1
-
-    @patch('openhands.app_server.sandbox.docker_sandbox_service.base62.encodebytes')
-    @patch('os.urandom')
-    async def test_start_sandbox_shared_mode(self, mock_urandom, mock_encodebytes):
-        """Test that start_sandbox uses shared volume when mode='shared'."""
+    async def test_start_sandbox_shared_cache(self, mock_urandom, mock_encodebytes):
+        """Test that start_sandbox mounts the shared package cache volume."""
         mock_urandom.side_effect = [b'container_id', b'session_key']
         mock_encodebytes.side_effect = ['test_id', 'test_key']
 
@@ -1442,7 +1299,6 @@ class TestPackageCacheOverlay:
             httpx_client=AsyncMock(),
             max_num_sandboxes=3,
             docker_client=mock_client,
-            package_cache_mode='shared',
         )
         service.sandbox_spec_service.get_default_sandbox_spec.return_value = MagicMock(
             id='test-image:latest',
@@ -1454,288 +1310,12 @@ class TestPackageCacheOverlay:
         with (
             patch.object(service, '_find_unused_port', return_value=12345),
             patch.object(service, 'pause_old_sandboxes', return_value=[]),
-            patch.object(service, '_cleanup_stale_overlays'),
         ):
             await service.start_sandbox()
 
         call_args = mock_client.containers.run.call_args
         volumes = call_args[1]['volumes']
         assert 'openhands-package-cache' in volumes
-        assert call_args[1].get('mounts') is None
-
-    @patch('openhands.app_server.sandbox.docker_sandbox_service.base62.encodebytes')
-    @patch('os.urandom')
-    async def test_start_sandbox_none_mode(self, mock_urandom, mock_encodebytes):
-        """Test that start_sandbox skips cache mount when mode='none'."""
-        mock_urandom.side_effect = [b'container_id', b'session_key']
-        mock_encodebytes.side_effect = ['test_id', 'test_key']
-
-        mock_container = MagicMock()
-        mock_container.name = 'oh-test-test_id'
-        mock_container.status = 'running'
-        mock_container.image.tags = ['test-image:latest']
-        mock_container.attrs = {
-            'Created': '2024-01-15T10:30:00.000000000Z',
-            'Config': {'Env': ['OH_SESSION_API_KEYS_0=test_key']},
-            'NetworkSettings': {'Ports': {}},
-        }
-
-        mock_client = MagicMock()
-        mock_client.containers.run.return_value = mock_container
-
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[
-                ExposedPort(
-                    name=AGENT_SERVER, description='Agent', container_port=8000
-                ),
-            ],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=mock_client,
-            package_cache_mode='none',
-        )
-        service.sandbox_spec_service.get_default_sandbox_spec.return_value = MagicMock(
-            id='test-image:latest',
-            initial_env={},
-            working_dir='/workspace',
-            command=None,
-        )
-
-        with (
-            patch.object(service, '_find_unused_port', return_value=12345),
-            patch.object(service, 'pause_old_sandboxes', return_value=[]),
-            patch.object(service, '_cleanup_stale_overlays'),
-        ):
-            await service.start_sandbox()
-
-        call_args = mock_client.containers.run.call_args
-        volumes = call_args[1]['volumes']
-        assert 'openhands-package-cache' not in volumes
-        assert call_args[1].get('mounts') is None
-        # chown should not be called since there's no cache mount
-        mock_container.exec_run.assert_not_called()
-
-    async def test_delete_sandbox_promotes_and_cleans_overlay(self):
-        """Test that delete_sandbox calls promote and cleanup for overlay mode."""
-        mock_container = MagicMock()
-        mock_container.status = 'running'
-        mock_client = MagicMock()
-        mock_client.containers.get.return_value = mock_container
-
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=mock_client,
-            package_cache_mode='overlay',
-        )
-
-        with (
-            patch.object(service, '_promote_package_cache') as mock_promote,
-            patch.object(service, '_cleanup_overlay_dirs') as mock_cleanup,
-        ):
-            result = await service.delete_sandbox('oh-test-abc123')
-
-        assert result is True
-        mock_promote.assert_called_once_with('oh-test-abc123')
-        mock_cleanup.assert_called_once_with('oh-test-abc123')
-
-    async def test_delete_sandbox_shared_mode_no_promote(self):
-        """Test that delete_sandbox does not promote/cleanup for shared mode."""
-        mock_container = MagicMock()
-        mock_container.status = 'running'
-        mock_client = MagicMock()
-        mock_client.containers.get.return_value = mock_container
-
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=mock_client,
-            package_cache_mode='shared',
-        )
-
-        with (
-            patch.object(service, '_promote_package_cache') as mock_promote,
-            patch.object(service, '_cleanup_overlay_dirs') as mock_cleanup,
-        ):
-            result = await service.delete_sandbox('oh-test-abc123')
-
-        assert result is True
-        mock_promote.assert_not_called()
-        mock_cleanup.assert_not_called()
-
-    def test_promote_package_cache_copies_new_files(self, tmp_path):
-        """Test that promotion copies files from upper to base."""
-        base_dir = str(tmp_path / 'base')
-        overlays_dir = str(tmp_path / 'overlays')
-
-        # Create base with existing file
-        os.makedirs(os.path.join(base_dir, 'npm'), exist_ok=True)
-        with open(os.path.join(base_dir, 'npm', 'existing.tgz'), 'w') as f:
-            f.write('existing')
-
-        # Create upper with new file and an existing file (should not overwrite)
-        upper_dir = os.path.join(overlays_dir, 'test-container', 'upper')
-        os.makedirs(os.path.join(upper_dir, 'npm'), exist_ok=True)
-        with open(os.path.join(upper_dir, 'npm', 'new-pkg.tgz'), 'w') as f:
-            f.write('new')
-        with open(os.path.join(upper_dir, 'npm', 'existing.tgz'), 'w') as f:
-            f.write('should-not-overwrite')
-
-        # Create whiteout file (should be skipped)
-        with open(os.path.join(upper_dir, 'npm', '.wh.deleted.tgz'), 'w') as f:
-            f.write('whiteout')
-
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=MagicMock(),
-            package_cache_mode='overlay',
-            package_cache_base_dir=base_dir,
-            package_cache_promote=True,
-        )
-
-        with patch(
-            'openhands.app_server.sandbox.docker_sandbox_service._PACKAGE_CACHE_OVERLAYS',
-            overlays_dir,
-        ):
-            service._promote_package_cache('test-container')
-
-        # New file should be copied
-        assert os.path.exists(os.path.join(base_dir, 'npm', 'new-pkg.tgz'))
-        with open(os.path.join(base_dir, 'npm', 'new-pkg.tgz')) as f:
-            assert f.read() == 'new'
-
-        # Existing file should NOT be overwritten
-        with open(os.path.join(base_dir, 'npm', 'existing.tgz')) as f:
-            assert f.read() == 'existing'
-
-        # Whiteout file should NOT be copied
-        assert not os.path.exists(os.path.join(base_dir, 'npm', '.wh.deleted.tgz'))
-
-    def test_promote_disabled(self, tmp_path):
-        """Test that promotion is skipped when package_cache_promote=False."""
-        base_dir = str(tmp_path / 'base')
-        overlays_dir = str(tmp_path / 'overlays')
-
-        upper_dir = os.path.join(overlays_dir, 'test-container', 'upper', 'npm')
-        os.makedirs(upper_dir, exist_ok=True)
-        with open(os.path.join(upper_dir, 'pkg.tgz'), 'w') as f:
-            f.write('data')
-
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=MagicMock(),
-            package_cache_mode='overlay',
-            package_cache_base_dir=base_dir,
-            package_cache_promote=False,
-        )
-
-        with patch(
-            'openhands.app_server.sandbox.docker_sandbox_service._PACKAGE_CACHE_OVERLAYS',
-            overlays_dir,
-        ):
-            service._promote_package_cache('test-container')
-
-        # Base dir should not have the file
-        assert not os.path.exists(os.path.join(base_dir, 'npm', 'pkg.tgz'))
-
-    def test_cleanup_overlay_dirs(self, tmp_path):
-        """Test that cleanup removes per-sandbox overlay directory."""
-        overlays_dir = str(tmp_path / 'overlays')
-        sandbox_dir = os.path.join(overlays_dir, 'test-container')
-        os.makedirs(os.path.join(sandbox_dir, 'upper'), exist_ok=True)
-        os.makedirs(os.path.join(sandbox_dir, 'work'), exist_ok=True)
-
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=MagicMock(),
-        )
-
-        with patch(
-            'openhands.app_server.sandbox.docker_sandbox_service._PACKAGE_CACHE_OVERLAYS',
-            overlays_dir,
-        ):
-            service._cleanup_overlay_dirs('test-container')
-
-        assert not os.path.exists(sandbox_dir)
-
-    def test_cleanup_stale_overlays(self, tmp_path):
-        """Test that stale overlay directories are removed."""
-        overlays_dir = str(tmp_path / 'overlays')
-        os.makedirs(os.path.join(overlays_dir, 'oh-test-running'), exist_ok=True)
-        os.makedirs(os.path.join(overlays_dir, 'oh-test-stale'), exist_ok=True)
-
-        mock_running = MagicMock()
-        mock_running.name = 'oh-test-running'
-        mock_client = MagicMock()
-        mock_client.containers.list.return_value = [mock_running]
-
-        service = DockerSandboxService(
-            sandbox_spec_service=AsyncMock(),
-            container_name_prefix='oh-test-',
-            host_port=3000,
-            container_url_pattern='http://localhost:{port}',
-            mounts=[],
-            exposed_ports=[],
-            health_check_path=None,
-            httpx_client=AsyncMock(),
-            max_num_sandboxes=3,
-            docker_client=mock_client,
-        )
-        # Force cleanup by resetting timer
-        service._last_stale_cleanup = 0.0
-
-        with patch(
-            'openhands.app_server.sandbox.docker_sandbox_service._PACKAGE_CACHE_OVERLAYS',
-            overlays_dir,
-        ):
-            service._cleanup_stale_overlays()
-
-        assert os.path.exists(os.path.join(overlays_dir, 'oh-test-running'))
-        assert not os.path.exists(os.path.join(overlays_dir, 'oh-test-stale'))
 
 
 class TestRegistryMirror:
@@ -1802,72 +1382,20 @@ class TestRegistryMirror:
 
 
 class TestDockerSandboxServiceInjectorNewFields:
-    """Test cases for new injector fields (package cache and registry)."""
+    """Test cases for new injector fields (registry cache)."""
 
-    def test_default_package_cache_mode(self):
-        """Test default package_cache_mode is 'overlay'."""
+    def test_default_dind_registry_settings(self):
+        """Test default DinD registry settings."""
         from openhands.app_server.sandbox.docker_sandbox_service import (
             DockerSandboxServiceInjector,
         )
 
         injector = DockerSandboxServiceInjector()
-        assert injector.package_cache_mode == 'overlay'
-        assert injector.package_cache_promote is True
         assert injector.dind_registry_cache is False
         assert injector.dind_registry_port == 5555
 
-    def test_custom_package_cache_settings(self):
-        """Test custom package cache configuration."""
-        from openhands.app_server.sandbox.docker_sandbox_service import (
-            DockerSandboxServiceInjector,
-        )
-
-        injector = DockerSandboxServiceInjector(
-            package_cache_mode='shared',
-            package_cache_base_dir='/custom/path',
-            package_cache_promote=False,
-        )
-        assert injector.package_cache_mode == 'shared'
-        assert injector.package_cache_base_dir == '/custom/path'
-        assert injector.package_cache_promote is False
-
-    def test_config_from_env_package_cache_mode(self):
-        """Test OH_SANDBOX__PACKAGE_CACHE_MODE env var."""
-        import os
-        from unittest.mock import patch
-
-        with patch.dict(
-            os.environ,
-            {'OH_SANDBOX__PACKAGE_CACHE_MODE': 'shared'},
-            clear=False,
-        ):
-            import openhands.app_server.config as config_module
-            from openhands.app_server.config import config_from_env
-
-            config_module._global_config = None
-            config = config_from_env()
-            assert config.sandbox.package_cache_mode == 'shared'
-
-    def test_config_from_env_package_cache_promote_false(self):
-        """Test OH_SANDBOX__PACKAGE_CACHE_PROMOTE=false env var."""
-        import os
-        from unittest.mock import patch
-
-        with patch.dict(
-            os.environ,
-            {'OH_SANDBOX__PACKAGE_CACHE_PROMOTE': 'false'},
-            clear=False,
-        ):
-            import openhands.app_server.config as config_module
-            from openhands.app_server.config import config_from_env
-
-            config_module._global_config = None
-            config = config_from_env()
-            assert config.sandbox.package_cache_promote is False
-
     def test_config_from_env_dind_registry_cache(self):
         """Test OH_SANDBOX__DIND_REGISTRY_CACHE env var."""
-        import os
         from unittest.mock import patch
 
         with patch.dict(
