@@ -249,6 +249,29 @@ def config_from_env() -> AppServerConfig:
             # Privileged mode for Docker-in-Docker support
             if os.getenv('OH_SANDBOX__PRIVILEGED', '').lower() in ('true', '1', 'yes'):
                 docker_sandbox_kwargs['privileged'] = True
+            # Package cache configuration
+            package_cache_mode = os.getenv('OH_SANDBOX__PACKAGE_CACHE_MODE')
+            if package_cache_mode:
+                docker_sandbox_kwargs['package_cache_mode'] = package_cache_mode
+            package_cache_base_dir = os.getenv('OH_SANDBOX__PACKAGE_CACHE_BASE_DIR')
+            if package_cache_base_dir:
+                docker_sandbox_kwargs['package_cache_base_dir'] = package_cache_base_dir
+            if os.getenv('OH_SANDBOX__PACKAGE_CACHE_PROMOTE', '').lower() in (
+                'false',
+                '0',
+                'no',
+            ):
+                docker_sandbox_kwargs['package_cache_promote'] = False
+            # Docker-in-Docker registry cache
+            if os.getenv('OH_SANDBOX__DIND_REGISTRY_CACHE', '').lower() in (
+                'true',
+                '1',
+                'yes',
+            ):
+                docker_sandbox_kwargs['dind_registry_cache'] = True
+            dind_registry_port = os.getenv('OH_SANDBOX__DIND_REGISTRY_PORT')
+            if dind_registry_port:
+                docker_sandbox_kwargs['dind_registry_port'] = int(dind_registry_port)
             # Traefik integration for subdomain routing of sandbox worker ports
             traefik_network = os.getenv('OH_SANDBOX__TRAEFIK_NETWORK')
             if traefik_network:
