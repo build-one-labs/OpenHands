@@ -47,10 +47,10 @@ export function RecentConversation({ conversation }: RecentConversationProps) {
         displayUrl = conversation.environment_url!;
       }
       return (
-        <div className="flex items-center gap-1">
-          <GlobeIcon width={12} height={12} className="text-[#A3A3A3]" />
+        <div className="flex items-center gap-1 min-w-0">
+          <GlobeIcon width={12} height={12} className="shrink-0 text-[#A3A3A3]" />
           <span
-            className="max-w-[124px] truncate"
+            className="truncate"
             title={conversation.environment_url!}
           >
             {displayUrl}
@@ -80,7 +80,7 @@ export function RecentConversation({ conversation }: RecentConversationProps) {
         </span>
       </div>
       <div className="flex items-center justify-between text-xs text-[#A3A3A3] leading-4 font-normal">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           {renderSource()}
           {hasRepository ? (
             <div className="flex items-center gap-1">
@@ -95,7 +95,7 @@ export function RecentConversation({ conversation }: RecentConversationProps) {
           ) : null}
         </div>
         {(conversation.created_at || conversation.last_updated_at) && (
-          <span>
+          <span className="shrink-0">
             {formatTimeDelta(
               conversation.created_at || conversation.last_updated_at,
             )}{" "}
