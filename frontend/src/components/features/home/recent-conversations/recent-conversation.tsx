@@ -48,11 +48,12 @@ export function RecentConversation({ conversation }: RecentConversationProps) {
       }
       return (
         <div className="flex items-center gap-1 min-w-0">
-          <GlobeIcon width={12} height={12} className="shrink-0 text-[#A3A3A3]" />
-          <span
-            className="truncate"
-            title={conversation.environment_url!}
-          >
+          <GlobeIcon
+            width={12}
+            height={12}
+            className="shrink-0 text-[#A3A3A3]"
+          />
+          <span className="truncate" title={conversation.environment_url!}>
             {displayUrl}
           </span>
         </div>
