@@ -422,11 +422,11 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         """
         environment_url = environment_url.rstrip('/')
         mcp_servers['environment'] = {
-            'url': f'{environment_url}/mcp/blueprint-dev',
+            'url': f'{environment_url}/service/swat/mcp/blueprint-dev',
             'transport': 'http',
         }
         _logger.info(
-            f'Added environment MCP server: {environment_url}/mcp/blueprint-dev'
+            f'Added environment MCP server: {environment_url}/service/swat/mcp/blueprint-dev'
         )
 
     async def _build_app_conversations(
