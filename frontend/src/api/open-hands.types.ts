@@ -80,6 +80,7 @@ export interface Conversation {
   conversation_version?: "V0" | "V1";
   sub_conversation_ids?: string[];
   public?: boolean;
+  environment_url?: string | null;
 }
 
 export interface ResultSet<T> {

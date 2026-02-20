@@ -15327,6 +15327,22 @@
     "de": "Verbinden...",
     "uk": "Підключення..."
   },
+  "HOME$NO_MATCHING_ENVIRONMENTS": {
+    "en": "No matching environments",
+    "ja": "一致する環境がありません",
+    "zh-CN": "没有匹配的环境",
+    "zh-TW": "沒有匹配的環境",
+    "ko-KR": "일치하는 환경이 없습니다",
+    "no": "Ingen matchende miljøer",
+    "it": "Nessun ambiente corrispondente",
+    "pt": "Nenhum ambiente correspondente",
+    "es": "No hay entornos coincidentes",
+    "ar": "لا توجد بيئات مطابقة",
+    "fr": "Aucun environnement correspondant",
+    "tr": "Eşleşen ortam bulunamadı",
+    "de": "Keine passenden Umgebungen",
+    "uk": "Немає відповідних середовищ"
+  },
   "HOME$NO_RECENT_CONVERSATIONS": {
     "en": "No recent conversations",
     "ja": "最近の会話はありません",
