@@ -11,7 +11,7 @@ import { useConversationConfig } from "./use-conversation-config";
 function appendDefaultQueryParams(url: string): string {
   try {
     const parsed = new URL(url);
-    parsed.searchParams.set("app", "SingleScreenApp");
+    parsed.searchParams.set("app", "chatPreviewApp");
     return parsed.toString();
   } catch {
     return url;
