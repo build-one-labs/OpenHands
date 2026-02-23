@@ -312,6 +312,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     return
 
             # Build the start request
+            await self._log_to_sandbox(
+                remote_workspace, 'Building conversation request...'
+            )
             start_conversation_request = (
                 await self._build_start_conversation_request_for_user(
                     sandbox,
@@ -334,6 +337,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             yield task
 
             # Start conversation...
+            await self._log_to_sandbox(
+                remote_workspace, 'Starting conversation on agent server...'
+            )
             body_json = start_conversation_request.model_dump(
                 mode='json', context={'expose_secrets': True}
             )
