@@ -308,6 +308,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 ):
                     yield updated_task
                 if task.status == AppConversationStartTaskStatus.ERROR:
+                    await self._cleanup_sandbox_on_error(task.sandbox_id, task.request)
                     return
 
             # Build the start request
@@ -404,9 +405,40 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
 
         except Exception as exc:
             _logger.exception('Error starting conversation', stack_info=True)
+            await self._cleanup_sandbox_on_error(task.sandbox_id, task.request)
             task.status = AppConversationStartTaskStatus.ERROR
             task.detail = str(exc)
             yield task
+
+    async def _cleanup_sandbox_on_error(
+        self,
+        sandbox_id: str | None,
+        request: AppConversationStartRequest,
+    ) -> None:
+        """Delete the sandbox created during startup when an error occurs.
+
+        Skips cleanup if the sandbox was pre-existing (request.sandbox_id was set),
+        since shared sandboxes from parent conversations should not be deleted.
+
+        Args:
+            sandbox_id: The sandbox ID to delete, or None if no sandbox was created.
+            request: The original start request, used to check if sandbox was pre-existing.
+        """
+        if not sandbox_id:
+            return
+        # Don't delete a pre-existing sandbox (e.g. inherited from parent conversation)
+        if request.sandbox_id:
+            return
+        try:
+            await self.sandbox_service.delete_sandbox(sandbox_id)
+            _logger.info(
+                f'Cleaned up sandbox {sandbox_id} after conversation start failure'
+            )
+        except Exception:
+            _logger.warning(
+                f'Failed to clean up sandbox {sandbox_id} after conversation start failure',
+                exc_info=True,
+            )
 
     def _add_environment_mcp_server(
         self, mcp_servers: dict[str, Any], environment_url: str
