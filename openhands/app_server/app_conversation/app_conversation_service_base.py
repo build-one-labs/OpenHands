@@ -202,11 +202,11 @@ class AppConversationServiceBase(AppConversationService, ABC):
 
         # Load MCP config directly from workspace files (bypasses agent-server
         # SkillInfo serialization which drops mcp_tools)
-        _logger.warning(f'Agent mcp_config BEFORE workspace merge: {agent.mcp_config}')
+        _logger.info(f'Agent mcp_config BEFORE workspace merge: {agent.mcp_config}')
         agent = await self._load_mcp_config_from_workspace(
             agent, remote_workspace, working_dir
         )
-        _logger.warning(f'Agent mcp_config AFTER workspace merge: {agent.mcp_config}')
+        _logger.info(f'Agent mcp_config AFTER workspace merge: {agent.mcp_config}')
 
         # Update agent with skills
         agent = self._create_agent_with_skills(agent, all_skills)
@@ -243,12 +243,12 @@ class AppConversationServiceBase(AppConversationService, ABC):
             Updated agent with merged MCP config, or unchanged agent on error
         """
         try:
-            _logger.warning(f'Loading MCP config from workspace files in {working_dir}')
+            _logger.info(f'Loading MCP config from workspace files in {working_dir}')
             mcp_servers = await self._extract_mcp_from_workspace_files(
                 remote_workspace, working_dir
             )
             if not mcp_servers:
-                _logger.warning('No MCP servers found in workspace files')
+                _logger.info('No MCP servers found in workspace files')
                 return agent
 
             # Merge into existing mcp_config
@@ -294,14 +294,14 @@ class AppConversationServiceBase(AppConversationService, ABC):
             find_cmd, working_dir, timeout=10
         )
         if not result.stdout or not result.stdout.strip():
-            _logger.warning(
+            _logger.info(
                 f'No skill/microagent files found in workspace '
                 f'(exit_code={result.exit_code}, stdout={result.stdout!r})'
             )
             return all_mcp_servers
 
         md_files = [f.strip() for f in result.stdout.strip().split('\n') if f.strip()]
-        _logger.warning(f'Found {len(md_files)} skill/microagent files: {md_files}')
+        _logger.info(f'Found {len(md_files)} skill/microagent files: {md_files}')
 
         for md_file in md_files:
             mcp_tools = await self._parse_mcp_tools_from_file(
@@ -379,7 +379,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
 
             mcp_tools = metadata.get('mcp_tools')
             if mcp_tools and isinstance(mcp_tools, dict):
-                _logger.warning(f'Parsed mcp_tools from {file_path}: {mcp_tools}')
+                _logger.info(f'Parsed mcp_tools from {file_path}: {mcp_tools}')
                 return mcp_tools
 
             return None
@@ -603,7 +603,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
             try:
                 steps = json.loads(check.stdout)
                 setup_dir = f'{working_dir}/.openhands/setup'
-                _logger.warning(
+                _logger.info(
                     f'[{task.sandbox_id}] Found setup.json with {len(steps)} steps'
                 )
                 async for updated_task in self._run_setup_steps(
@@ -623,7 +623,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
             _logger.info('No setup script or setup.json found')
             return
 
-        _logger.warning(f'[{task.sandbox_id}] Running setup script: {setup_script}')
+        _logger.info(f'[{task.sandbox_id}] Running setup script: {setup_script}')
         result = await workspace.execute_command(
             f'chmod +x {setup_script} && bash {setup_script}', timeout=600
         )
@@ -642,7 +642,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
             )
             yield task
         else:
-            _logger.warning(f'[{task.sandbox_id}] Setup script completed successfully')
+            _logger.info(f'[{task.sandbox_id}] Setup script completed successfully')
 
     async def _run_setup_steps(
         self,
@@ -670,7 +670,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
                 )
                 continue
 
-            _logger.warning(
+            _logger.info(
                 f'[{task.sandbox_id}] Setup step {i + 1} of {total}: {description}'
             )
             step_start = time.monotonic()
@@ -694,7 +694,7 @@ class AppConversationServiceBase(AppConversationService, ABC):
                 yield task
                 return
             output = result.stdout or result.stderr or ''
-            _logger.warning(
+            _logger.info(
                 f'[{task.sandbox_id}] Setup step {i + 1} of {total} completed in {elapsed:.1f}s'
                 + (f'\n{output}' if output else '')
             )
