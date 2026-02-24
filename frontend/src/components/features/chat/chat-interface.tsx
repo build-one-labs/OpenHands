@@ -277,9 +277,7 @@ export function ChatInterface() {
         {!hasSubstantiveAgentActions &&
           !optimisticUserMessage &&
           !userEventsExist &&
-          !isChatLoading && (
-            <ChatSuggestions />
-          )}
+          !isChatLoading && <ChatSuggestions />}
         {/* Note: We only hide chat suggestions when there's a user message */}
 
         <div
