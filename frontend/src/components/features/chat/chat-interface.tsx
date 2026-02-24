@@ -278,9 +278,7 @@ export function ChatInterface() {
           !optimisticUserMessage &&
           !userEventsExist &&
           !isChatLoading && (
-            <ChatSuggestions
-              onSuggestionsClick={(message) => setMessageToSend(message)}
-            />
+            <ChatSuggestions />
           )}
         {/* Note: We only hide chat suggestions when there's a user message */}
 
