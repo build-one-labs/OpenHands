@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
@@ -245,6 +246,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         _logger.info(
             f'Starting conversation: id={request.conversation_id.hex}, repo={request.selected_repository}'
         )
+        startup_start_time = time.monotonic()
 
         # Create and yield the start task
         user_id = await self.user_context.get_user_id()
@@ -403,6 +405,12 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 user.security_analyzer,
                 self.httpx_client,
             )
+
+            # Log how long it took for the conversation to start
+            duration = time.monotonic() - startup_start_time
+            duration_msg = f'Conversation ready in {duration:.1f}s'
+            _logger.info(f'{duration_msg}: id={request.conversation_id.hex}')
+            await self._log_to_sandbox(remote_workspace, duration_msg)
 
             # Update the start task
             task.status = AppConversationStartTaskStatus.READY
