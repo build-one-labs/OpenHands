@@ -40,9 +40,10 @@ from openhands.utils.async_utils import call_sync_from_async
 from openhands.utils.shutdown_listener import add_shutdown_listener
 from openhands.utils.tenacity_stop import stop_if_should_exit
 
-CONTAINER_NAME_PREFIX = 'openhands-runtime-'
+_RESOURCE_PREFIX = os.environ.get('OH_SANDBOX__RESOURCE_PREFIX', 'openhands')
+CONTAINER_NAME_PREFIX = f'{_RESOURCE_PREFIX}-runtime-'
 
-_PACKAGE_CACHE_VOLUME = 'openhands-package-cache'
+_PACKAGE_CACHE_VOLUME = f'{_RESOURCE_PREFIX}-package-cache'
 _PACKAGE_CACHE_PATH = '/opt/package-cache'
 
 EXECUTION_SERVER_PORT_RANGE = (30000, 39999)

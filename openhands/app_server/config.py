@@ -233,6 +233,14 @@ def config_from_env() -> AppServerConfig:
                         )
                 if mounts:
                     docker_sandbox_kwargs['mounts'] = mounts
+            # Resource prefix for Docker resource names (volumes, containers)
+            resource_prefix = os.getenv('OH_SANDBOX__RESOURCE_PREFIX')
+            if resource_prefix:
+                docker_sandbox_kwargs['resource_prefix'] = resource_prefix
+            # Container name prefix for sandbox containers
+            container_name_prefix = os.getenv('OH_SANDBOX__CONTAINER_NAME_PREFIX')
+            if container_name_prefix:
+                docker_sandbox_kwargs['container_name_prefix'] = container_name_prefix
             # Docker network mode for container-to-container communication
             sandbox_network = os.getenv('OH_SANDBOX__NETWORK')
             if sandbox_network:

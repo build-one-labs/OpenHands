@@ -45,7 +45,6 @@ _logger = logging.getLogger(__name__)
 STARTUP_GRACE_SECONDS = 60
 
 _DOCKER_SOCKET = '/var/run/docker.sock'
-_PACKAGE_CACHE_VOLUME = 'openhands-package-cache'
 _PACKAGE_CACHE_PATH = '/opt/package-cache'
 
 
@@ -106,6 +105,7 @@ class DockerSandboxService(SandboxService):
     health_check_path: str | None
     httpx_client: httpx.AsyncClient
     max_num_sandboxes: int
+    resource_prefix: str = 'openhands'
     web_url: str | None = None
     extra_hosts: dict[str, str] = field(default_factory=dict)
     network: str | None = None
@@ -746,7 +746,8 @@ class DockerSandboxService(SandboxService):
         }
 
         # Mount the shared package cache volume
-        volumes[_PACKAGE_CACHE_VOLUME] = {
+        package_cache_volume = f'{self.resource_prefix}-package-cache'
+        volumes[package_cache_volume] = {
             'bind': _PACKAGE_CACHE_PATH,
             'mode': 'rw',
         }
@@ -965,7 +966,7 @@ class DockerSandboxService(SandboxService):
 
             # Remove associated volume
             try:
-                volume_name = f'openhands-workspace-{sandbox_id}'
+                volume_name = f'{self.resource_prefix}-workspace-{sandbox_id}'
                 volume = self.docker_client.volumes.get(volume_name)
                 volume.remove()
             except (NotFound, APIError):
@@ -995,6 +996,15 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'Used for webhook callbacks from agent-server containers. '
             'If running OpenHands on a non-default port, set this to match. '
             'Configure via OH_SANDBOX_HOST_PORT environment variable.'
+        ),
+    )
+    resource_prefix: str = Field(
+        default='openhands',
+        description=(
+            'Prefix for Docker resource names (volumes, containers) created by '
+            'the sandbox service. Use a unique value per deployment when multiple '
+            'OpenHands instances share the same Docker daemon. '
+            'Configure via OH_SANDBOX__RESOURCE_PREFIX environment variable.'
         ),
     )
     container_name_prefix: str = 'oh-agent-server-'
@@ -1239,6 +1249,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
                 health_check_path=self.health_check_path,
                 httpx_client=httpx_client,
                 max_num_sandboxes=self.max_num_sandboxes,
+                resource_prefix=self.resource_prefix,
                 web_url=web_url,
                 extra_hosts=self.extra_hosts,
                 network=self.network,

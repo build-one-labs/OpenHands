@@ -192,6 +192,7 @@ class OssAppLifespanService(AppLifespanService):
                 port=injector.dind_registry_port,
                 labels=injector.container_labels,
                 network=injector.network,
+                resource_prefix=injector.resource_prefix,
             )
             mirror_url = manager.ensure_running()
             # Store on the injector so inject() can pass it to DockerSandboxService

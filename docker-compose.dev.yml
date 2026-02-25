@@ -15,6 +15,7 @@ services:
       - AGENT_SERVER_IMAGE_TAG=${AGENT_SERVER_IMAGE_TAG:-31536c8-python}
       - SANDBOX_USER_ID=0
       - WORKSPACE_MOUNT_PATH=${WORKSPACE_BASE:-$PWD/workspace}
+      - OH_SANDBOX__RESOURCE_PREFIX=${OH_SANDBOX__RESOURCE_PREFIX:-openhands}
       - OH_SANDBOX__NETWORK=openhands-net
       - OH_SANDBOX__APP_HOSTNAME=openhands-app
       - 'OH_SANDBOX_CONTAINER_LABELS={"com.docker.compose.project": "openhands"}'

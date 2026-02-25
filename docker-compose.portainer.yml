@@ -3,7 +3,11 @@ volumes:
   openhands_state:
   openhands_workspace:
   openhands-registry-cache:
+    name: ${STACK}-registry-cache
   openhands-cloudsmith-cache:
+    name: ${STACK}-cloudsmith-cache
+  openhands-package-cache:
+    name: ${STACK}-package-cache
 
 networks:
   openhands-net:
@@ -29,6 +33,8 @@ services:
       # --- Sandbox / Runtime ---
       - SANDBOX_USER_ID=${SANDBOX_USER_ID:-0}
       - WORKSPACE_MOUNT_PATH=/opt/workspace_base
+      - OH_SANDBOX__RESOURCE_PREFIX=${STACK}
+      - OH_SANDBOX__CONTAINER_NAME_PREFIX=${STACK}-agent-server-
       - OH_SANDBOX__NETWORK=${STACK}-openhands-net
       - OH_SANDBOX__APP_HOSTNAME=openhands-app
       - OH_SANDBOX__PRIVILEGED=true
