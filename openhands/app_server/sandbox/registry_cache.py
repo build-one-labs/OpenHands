@@ -20,8 +20,15 @@ _IMAGE = 'registry:2'
 class RegistryCacheManager:
     """Manages a local pull-through Docker registry cache container."""
 
-    def __init__(self, port: int = 5555) -> None:
+    def __init__(
+        self,
+        port: int = 5555,
+        labels: dict[str, str] | None = None,
+        network: str | None = None,
+    ) -> None:
         self.port = port
+        self.labels = labels or {}
+        self.network = network
         self._docker: docker.DockerClient | None = None
 
     @property
@@ -54,7 +61,7 @@ class RegistryCacheManager:
             self._client.images.pull(_IMAGE)
 
         _logger.info(f'Starting registry cache container on port {self.port}...')
-        self._client.containers.run(  # type: ignore[call-overload]
+        container = self._client.containers.run(  # type: ignore[call-overload]
             image=_IMAGE,
             name=_CONTAINER_NAME,
             detach=True,
@@ -66,6 +73,8 @@ class RegistryCacheManager:
             volumes={
                 _VOLUME_NAME: {'bind': '/var/lib/registry', 'mode': 'rw'},
             },
+            labels=self.labels if self.labels else None,
+            network=self.network if self.network else None,
         )
         _logger.info('Registry cache container started')
         return self._mirror_url()
