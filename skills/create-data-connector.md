@@ -538,6 +538,14 @@ Reference files:
 - `isFilterList` utility: `@buildone/app-server-tslib/utils`
 
 ### Related Documentation
-- `node_modules/@buildone/swat-cli/knowledge/architecture_info/connectors.md` — full connector framework docs
-- `node_modules/@buildone/swat-cli/knowledge/blueprint_dsl/CLAUDE.md` — blueprint DSL reference
-- `node_modules/@buildone/swat-cli/knowledge/blueprint_dsl/templates-and-create-from-template.md` — template usage
+
+Resolve the knowledge base path before reading these files:
+```
+KNOWLEDGE_PATH=$(grep -s '^BUILDONE_KNOWLEDGE_FILES_PATH=' /workspace/.env | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'"); \
+if [ -z "$KNOWLEDGE_PATH" ]; then KNOWLEDGE_PATH="/knowledge"; \
+elif [[ "$KNOWLEDGE_PATH" != /* ]]; then KNOWLEDGE_PATH="/workspace/$KNOWLEDGE_PATH"; fi
+```
+
+- `KNOWLEDGE_PATH/architecture_info/connectors.md` — full connector framework docs
+- `KNOWLEDGE_PATH/blueprint_dsl/CLAUDE.md` — blueprint DSL reference
+- `KNOWLEDGE_PATH/blueprint_dsl/templates-and-create-from-template.md` — template usage
