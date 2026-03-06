@@ -271,15 +271,49 @@ class DockerSandboxService(SandboxService):
             f'dockerd log:\n{dockerd_log}'
         )
 
+    @staticmethod
+    def _get_codeartifact_token(env_vars: dict[str, str]) -> str | None:
+        """Fetch a CodeArtifact authorization token using AWS credentials.
+
+        Uses B1_ACCESS_KEY_ID / B1_SECRET_ACCESS_KEY from env_vars if
+        available, otherwise falls back to the server's default AWS
+        credential chain (IAM role, environment, etc.).
+
+        Returns the token string, or None if the API call fails.
+        """
+        import boto3
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        region = os.environ.get('AWS_REGION', 'eu-central-1')
+        access_key = env_vars.get('B1_ACCESS_KEY_ID', '')
+        secret_key = env_vars.get('B1_SECRET_ACCESS_KEY', '')
+
+        try:
+            if access_key and secret_key:
+                session = boto3.Session(
+                    aws_access_key_id=access_key,
+                    aws_secret_access_key=secret_key,
+                    region_name=region,
+                )
+            else:
+                session = boto3.Session(region_name=region)
+            ca_client = session.client('codeartifact')
+            ca_response = ca_client.get_authorization_token(
+                domain='buildone',
+                domainOwner='653306034207',
+            )
+            _logger.info('CodeArtifact auth token fetched successfully')
+            return ca_response['authorizationToken']
+        except (BotoCoreError, ClientError) as e:
+            _logger.warning(f'Failed to fetch CodeArtifact auth token: {e}')
+            return None
+
     async def _login_ecr(self, container) -> None:
-        """Authenticate the sandbox to AWS ECR and CodeArtifact.
+        """Authenticate the sandbox's Docker daemon to AWS ECR.
 
         Uses the container's B1_ACCESS_KEY_ID and B1_SECRET_ACCESS_KEY
-        environment variables to:
-        1. Obtain an ECR authorization token and run ``docker login``
-           inside the container.
-        2. Obtain a CodeArtifact authorization token and inject it as
-           the ``CODEARTIFACT_AUTH_TOKEN`` environment variable.
+        environment variables to obtain an ECR authorization token via
+        boto3, then runs ``docker login`` inside the container.
         """
         import boto3
         from botocore.exceptions import BotoCoreError, ClientError
@@ -297,15 +331,13 @@ class DockerSandboxService(SandboxService):
             )
             return
 
-        region = os.environ.get('AWS_REGION', 'us-east-1')
-        session = boto3.Session(
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            region_name=region,
-        )
-
-        # --- ECR docker login ---
+        region = os.environ.get('AWS_REGION', 'eu-central-1')
         try:
+            session = boto3.Session(
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                region_name=region,
+            )
             ecr_client = session.client('ecr')
             token_response = ecr_client.get_authorization_token()
             auth_data = token_response['authorizationData'][0]
@@ -324,30 +356,6 @@ class DockerSandboxService(SandboxService):
             _logger.info(f'ECR login successful in container {container.name}')
         except (BotoCoreError, ClientError) as e:
             _logger.warning(f'ECR login failed in container {container.name}: {e}')
-
-        # --- CodeArtifact auth token ---
-        try:
-            ca_client = session.client('codeartifact')
-            ca_response = ca_client.get_authorization_token(
-                domain='buildone',
-                domainOwner='653306034207',
-            )
-            ca_token = ca_response['authorizationToken']
-
-            container.exec_run(
-                [
-                    'bash',
-                    '-c',
-                    f'echo "export CODEARTIFACT_AUTH_TOKEN={ca_token}" >> /etc/environment && '
-                    f'echo "export CODEARTIFACT_AUTH_TOKEN={ca_token}" >> /etc/bash.bashrc',
-                ],
-                user='root',
-            )
-            _logger.info(f'CodeArtifact token injected in container {container.name}')
-        except (BotoCoreError, ClientError) as e:
-            _logger.warning(
-                f'CodeArtifact token fetch failed in container {container.name}: {e}'
-            )
 
     def _schedule_codespace_port_visibility(
         self, port_mappings: dict[int, int]
@@ -734,6 +742,11 @@ class DockerSandboxService(SandboxService):
         if extra_env:
             env_vars.update(extra_env)
         env_vars[SESSION_API_KEY_VARIABLE] = session_api_key
+
+        # Fetch CodeArtifact auth token if AWS credentials are available
+        ca_token = self._get_codeartifact_token(env_vars)
+        if ca_token:
+            env_vars['CODEARTIFACT_AUTH_TOKEN'] = ca_token
         webhook_host = self.app_hostname or 'host.docker.internal'
         env_vars[WEBHOOK_CALLBACK_VARIABLE] = (
             f'http://{webhook_host}:{self.host_port}/api/v1/webhooks'
