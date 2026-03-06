@@ -254,21 +254,7 @@ class DockerSandboxService(SandboxService):
                         'chmod 666 /var/run/docker.sock', user='root'
                     ),
                 )
-                # Authenticate to private registries that need
-                # per-user credentials.  The BUILDONE_USER /
-                # BUILDONE_TOKEN env vars are set per-sandbox from
-                # the user's custom secrets.
-                await loop.run_in_executor(
-                    None,
-                    lambda: container.exec_run(
-                        'bash -c "'
-                        'if [ -n "$BUILDONE_USER" ] && [ -n "$BUILDONE_TOKEN" ]; then '
-                        'docker login docker.cloudsmith.io '
-                        '-u "$BUILDONE_USER" -p "$BUILDONE_TOKEN" '
-                        '>/dev/null 2>&1; fi"',
-                        user='root',
-                    ),
-                )
+
                 return
             await asyncio.sleep(1)
         # Capture dockerd log to help diagnose startup failures.
@@ -1158,7 +1144,7 @@ class DockerSandboxServiceInjector(SandboxServiceInjector):
             'Mapping of upstream registry hostnames to local pull-through cache URLs. '
             'Used to configure containerd host mirrors inside privileged sandboxes '
             'so that pulls from non-Docker-Hub registries are cached locally. '
-            'Example: {"docker.cloudsmith.io": "http://openhands-cloudsmith-cache:5000"} '
+            'Example: {"myregistry.example.com": "http://openhands-registry-cache:5000"} '
             'Configure via OH_SANDBOX__DIND_REGISTRY_MIRRORS environment variable '
             'as comma-separated host=url pairs.'
         ),
