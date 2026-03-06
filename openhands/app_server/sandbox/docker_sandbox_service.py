@@ -255,6 +255,8 @@ class DockerSandboxService(SandboxService):
                     ),
                 )
 
+                # Authenticate to ECR if AWS credentials are available
+                await self._login_ecr(container)
                 return
             await asyncio.sleep(1)
         # Capture dockerd log to help diagnose startup failures.
@@ -268,6 +270,84 @@ class DockerSandboxService(SandboxService):
             f'dockerd failed to start in container {container.name}. '
             f'dockerd log:\n{dockerd_log}'
         )
+
+    async def _login_ecr(self, container) -> None:
+        """Authenticate the sandbox to AWS ECR and CodeArtifact.
+
+        Uses the container's B1_ACCESS_KEY_ID and B1_SECRET_ACCESS_KEY
+        environment variables to:
+        1. Obtain an ECR authorization token and run ``docker login``
+           inside the container.
+        2. Obtain a CodeArtifact authorization token and inject it as
+           the ``CODEARTIFACT_AUTH_TOKEN`` environment variable.
+        """
+        import boto3
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        # Read credentials from the container's environment
+        result = container.exec_run('bash -c "echo $B1_ACCESS_KEY_ID"', user='root')
+        access_key = result.output.decode().strip() if result.output else ''
+
+        result = container.exec_run('bash -c "echo $B1_SECRET_ACCESS_KEY"', user='root')
+        secret_key = result.output.decode().strip() if result.output else ''
+
+        if not access_key or not secret_key:
+            _logger.debug(
+                f'No AWS credentials in container {container.name}, skipping ECR login'
+            )
+            return
+
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        session = boto3.Session(
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            region_name=region,
+        )
+
+        # --- ECR docker login ---
+        try:
+            ecr_client = session.client('ecr')
+            token_response = ecr_client.get_authorization_token()
+            auth_data = token_response['authorizationData'][0]
+            token = auth_data['authorizationToken']
+            endpoint = auth_data['proxyEndpoint']
+
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: container.exec_run(
+                    f'bash -c "echo {token} | base64 -d | cut -d: -f2 | '
+                    f'docker login --username AWS --password-stdin {endpoint}"',
+                    user='root',
+                ),
+            )
+            _logger.info(f'ECR login successful in container {container.name}')
+        except (BotoCoreError, ClientError) as e:
+            _logger.warning(f'ECR login failed in container {container.name}: {e}')
+
+        # --- CodeArtifact auth token ---
+        try:
+            ca_client = session.client('codeartifact')
+            ca_response = ca_client.get_authorization_token(
+                domain='buildone',
+                domainOwner='653306034207',
+            )
+            ca_token = ca_response['authorizationToken']
+
+            container.exec_run(
+                [
+                    'bash',
+                    '-c',
+                    f'echo "export CODEARTIFACT_AUTH_TOKEN={ca_token}" >> /etc/environment && '
+                    f'echo "export CODEARTIFACT_AUTH_TOKEN={ca_token}" >> /etc/bash.bashrc',
+                ],
+                user='root',
+            )
+            _logger.info(f'CodeArtifact token injected in container {container.name}')
+        except (BotoCoreError, ClientError) as e:
+            _logger.warning(
+                f'CodeArtifact token fetch failed in container {container.name}: {e}'
+            )
 
     def _schedule_codespace_port_visibility(
         self, port_mappings: dict[int, int]
