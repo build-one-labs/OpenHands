@@ -220,7 +220,9 @@ export default function MainApp() {
       data-testid="root-layout"
       className={cn(
         "h-screen lg:min-w-5xl flex flex-col md:flex-row bg-base",
-        pathname === "/" ? "p-0" : hideSidebar ? "p-0 md:p-3" : "p-0 md:p-3 md:pl-0",
+        pathname === "/" && "p-0",
+        pathname !== "/" && hideSidebar && "p-0 md:p-3",
+        pathname !== "/" && !hideSidebar && "p-0 md:p-3 md:pl-0",
         isMobileDevice() && "overflow-hidden",
       )}
     >
