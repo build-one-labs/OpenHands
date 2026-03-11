@@ -175,7 +175,6 @@ export default function MainApp() {
 
   const isB1 = config.data?.APP_MODE === "b1";
   const hideSidebar = searchParams.get("hideSidebar") === "true";
-  console.log('hideSidebar', hideSidebar);
 
   const shouldRedirectToLogin =
     config.isLoading ||
