@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - main
+      - develop
   pull_request:
 
 # If triggered by a PR, it will be in the same group. However, each commit on main will be in its own unique group
