@@ -629,10 +629,27 @@ async def get_conversation_status(
             'This is the conversation_id returned by create_conversation.'
         ),
     ],
+    include_messages: Annotated[
+        bool,
+        Field(
+            description='If true, include the conversation messages in the response. '
+            'Messages are returned in chronological order.'
+        ),
+    ] = True,
+    message_limit: Annotated[
+        int,
+        Field(
+            description='Maximum number of messages to return when include_messages is true. '
+            'Ignored if include_messages is false.',
+            ge=1,
+            le=100,
+        ),
+    ] = 50,
 ) -> str:
     """Check the status of a conversation.
 
     Returns the current execution status and metadata of the specified conversation.
+    Optionally includes the conversation messages.
     Useful for checking on conversations created with create_conversation in
     fire-and-forget mode, or for monitoring any conversation's progress.
     """
@@ -663,16 +680,34 @@ async def get_conversation_status(
                 )
 
             conv = conversations[0]
-            return json.dumps(
-                {
-                    'conversation_id': conversation_id,
-                    'execution_status': conv.get('execution_status'),
-                    'title': conv.get('title'),
-                    'selected_repository': conv.get('selected_repository'),
-                    'selected_branch': conv.get('selected_branch'),
-                    'sandbox_status': conv.get('sandbox_status'),
-                }
-            )
+            result: dict = {
+                'conversation_id': conversation_id,
+                'execution_status': conv.get('execution_status'),
+                'title': conv.get('title'),
+                'selected_repository': conv.get('selected_repository'),
+                'selected_branch': conv.get('selected_branch'),
+                'sandbox_status': conv.get('sandbox_status'),
+            }
+
+            if include_messages:
+                conversation_url = conv.get('conversation_url')
+                if conversation_url:
+                    # Use the V1 messages endpoint which proxies to the agent server
+                    events_resp = await client.get(
+                        f'{base_url}/api/v1/app-conversations/{conversation_id}/messages',
+                        params={'limit': message_limit},
+                        headers=fwd_headers,
+                    )
+                    events_resp.raise_for_status()
+                    result['messages'] = events_resp.json()
+                else:
+                    result['messages'] = []
+                    result['messages_error'] = (
+                        'Conversation sandbox is not running. '
+                        'Messages are only available when the sandbox is active.'
+                    )
+
+            return json.dumps(result)
     except httpx.HTTPStatusError as e:
         raise ToolError(
             f'Failed to get conversation status: HTTP {e.response.status_code} - {e.response.text}'
