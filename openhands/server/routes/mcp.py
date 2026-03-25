@@ -396,6 +396,26 @@ async def create_conversation(
         str | None,
         Field(description='Optional title for the new conversation'),
     ] = None,
+    selected_repository: Annotated[
+        str | None,
+        Field(
+            description='Optional git repository to connect the conversation to (e.g. "owner/repo"). '
+            "If not provided, the conversation inherits the parent's repository."
+        ),
+    ] = None,
+    selected_branch: Annotated[
+        str | None,
+        Field(
+            description='Optional git branch to use. Only applies when selected_repository is set.'
+        ),
+    ] = None,
+    environment_url: Annotated[
+        str | None,
+        Field(
+            description='Optional URL of a remote environment to connect to instead of a repository. '
+            'Mutually exclusive with selected_repository.'
+        ),
+    ] = None,
     system_message_suffix: Annotated[
         str | None,
         Field(
@@ -423,9 +443,9 @@ async def create_conversation(
 ) -> str:
     """Launch a new sub-conversation from the current conversation.
 
-    Creates a new conversation that shares the same sandbox (workspace/environment)
-    and inherits git repository, branch, and LLM configuration from the current
-    conversation. The new conversation will work on the given initial_message independently.
+    Creates a new conversation that inherits LLM configuration from the current
+    conversation. By default it shares the parent's sandbox, but you can optionally
+    connect it to a specific repository or a remote environment instead.
 
     Use this when you want to delegate a task to a separate conversation, for example:
     - Running a parallel investigation
@@ -435,6 +455,12 @@ async def create_conversation(
     Returns a JSON object with the conversation ID and status information.
     """
     logger.info('Calling OpenHands MCP create_conversation')
+
+    if selected_repository and environment_url:
+        raise ToolError(
+            'Cannot specify both selected_repository and environment_url. '
+            'Choose one: connect to a repository or to an environment.'
+        )
 
     request = get_http_request()
     parent_conversation_id = request.headers.get(
@@ -461,6 +487,12 @@ async def create_conversation(
     }
     if title:
         payload['title'] = title
+    if selected_repository:
+        payload['selected_repository'] = selected_repository
+        if selected_branch:
+            payload['selected_branch'] = selected_branch
+    if environment_url:
+        payload['environment_url'] = environment_url
     if system_message_suffix:
         payload['system_message_suffix'] = system_message_suffix
 
