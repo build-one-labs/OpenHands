@@ -60,6 +60,7 @@ def get_default_sandbox_specs():
                 'COREPACK_ENABLE_DOWNLOAD_PROMPT': '0',
                 'AUTHENTICATION_SERVER_TYPE': 'remote',
                 'DATABASE_SERVER_TYPE': 'neon',
+                'B1_WORKSPACE': 'true',
                 **get_forwarded_env(),
                 **get_agent_server_env(),
             },
