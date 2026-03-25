@@ -578,18 +578,27 @@ class AppConversationServiceBase(AppConversationService, ABC):
         await self._log_to_sandbox(
             workspace, f'Cloning repository {request.selected_repository}...'
         )
-        clone_command = f'git clone {remote_repo_url} .'
+        if request.selected_branch:
+            clone_command = (
+                f'git clone --depth 1 --branch {request.selected_branch} '
+                f'{remote_repo_url} .'
+            )
+        else:
+            clone_command = f'git clone --depth 1 {remote_repo_url} .'
         result = await workspace.execute_command(
             clone_command, workspace.working_dir, 120
         )
         if result.exit_code:
             _logger.warning(f'Git clone failed: {result.stderr}')
 
-        # Checkout the appropriate branch
+        # Create a workspace branch from the cloned state
         if request.selected_branch:
-            checkout_command = f'git checkout {request.selected_branch}'
+            random_str = base62.encodebytes(os.urandom(16))
+            openhands_workspace_branch = f'openhands-workspace-{random_str}'
+            checkout_command = f'git checkout -b {openhands_workspace_branch}'
             await self._log_to_sandbox(
-                workspace, f'Checking out branch {request.selected_branch}'
+                workspace,
+                f'Creating branch {openhands_workspace_branch} from {request.selected_branch}',
             )
         else:
             # Generate a random branch name to avoid conflicts
