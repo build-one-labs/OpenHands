@@ -74,9 +74,7 @@ export function SubConversationList({
             onClick={onClose}
           >
             <ConversationCard
-              onDelete={() =>
-                onDelete(conv.id, conv.title ?? "Untitled")
-              }
+              onDelete={() => onDelete(conv.id, conv.title ?? "Untitled")}
               onStop={() => onStop(conv.id, "V1")}
               onChangeTitle={(title) => onChangeTitle(conv.id, title)}
               title={conv.title ?? "Sub-conversation"}

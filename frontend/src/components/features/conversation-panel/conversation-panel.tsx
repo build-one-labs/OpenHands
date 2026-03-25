@@ -194,9 +194,7 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
       {conversations?.map((project) => {
         const hasSubConversations =
           (project.sub_conversation_ids?.length ?? 0) > 0;
-        const isExpanded = expandedConversations.has(
-          project.conversation_id,
-        );
+        const isExpanded = expandedConversations.has(project.conversation_id);
 
         return (
           <React.Fragment key={project.conversation_id}>
@@ -206,10 +204,7 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
             >
               <ConversationCard
                 onDelete={() =>
-                  handleDeleteProject(
-                    project.conversation_id,
-                    project.title,
-                  )
+                  handleDeleteProject(project.conversation_id, project.title)
                 }
                 onStop={() =>
                   handleStopConversation(
@@ -218,10 +213,7 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
                   )
                 }
                 onChangeTitle={(title) =>
-                  handleConversationTitleChange(
-                    project.conversation_id,
-                    title,
-                  )
+                  handleConversationTitleChange(project.conversation_id, title)
                 }
                 title={project.title}
                 selectedRepository={{
@@ -236,13 +228,9 @@ export function ConversationPanel({ onClose }: ConversationPanelProps) {
                 conversationVersion={project.conversation_version}
                 trigger={project.trigger}
                 environmentUrl={project.environment_url}
-                contextMenuOpen={
-                  openContextMenuId === project.conversation_id
-                }
+                contextMenuOpen={openContextMenuId === project.conversation_id}
                 onContextMenuToggle={(isOpen) =>
-                  setOpenContextMenuId(
-                    isOpen ? project.conversation_id : null,
-                  )
+                  setOpenContextMenuId(isOpen ? project.conversation_id : null)
                 }
                 hasSubConversations={hasSubConversations}
                 isExpanded={isExpanded}

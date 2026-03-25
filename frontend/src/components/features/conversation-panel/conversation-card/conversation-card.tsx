@@ -1,5 +1,6 @@
 import React from "react";
 import { usePostHog } from "posthog-js/react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "#/utils/utils";
 import { transformVSCodeUrl } from "#/utils/vscode-url-helper";
 import ConversationService from "#/api/conversation-service/conversation-service.api";
@@ -8,7 +9,6 @@ import {
   ConversationTrigger,
   RepositorySelection,
 } from "#/api/open-hands.types";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { ConversationCardHeader } from "./conversation-card-header";
 import { ConversationCardActions } from "./conversation-card-actions";
 import { ConversationCardFooter } from "./conversation-card-footer";
