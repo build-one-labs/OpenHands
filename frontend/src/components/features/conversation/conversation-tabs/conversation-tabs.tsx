@@ -21,6 +21,7 @@ import { ConversationTabsContextMenu } from "./conversation-tabs-context-menu";
 import { USE_PLANNING_AGENT } from "#/utils/feature-flags";
 import { useConversationId } from "#/hooks/use-conversation-id";
 import { useActiveConversation } from "#/hooks/query/use-active-conversation";
+import { useTaskPolling } from "#/hooks/query/use-task-polling";
 
 const REPO_ONLY_TABS = ["editor", "vscode", "terminal"];
 
@@ -42,7 +43,8 @@ export function ConversationTabs() {
   } = useConversationLocalStorageState(conversationId);
 
   const { data: conversation } = useActiveConversation();
-  const isRepositoryConversation = !!conversation?.selected_repository;
+  const { repositoryInfo } = useTaskPolling();
+  const isRepositoryConversation = !!(conversation?.selected_repository || repositoryInfo?.selectedRepository);
 
   const shouldUsePlanningAgent = USE_PLANNING_AGENT();
 
