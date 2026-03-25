@@ -61,6 +61,7 @@ def get_default_sandbox_specs():
                 'AUTHENTICATION_SERVER_TYPE': 'remote',
                 'DATABASE_SERVER_TYPE': 'neon',
                 'B1_WORKSPACE': 'true',
+                'OPENHANDS': 'true',
                 **get_forwarded_env(),
                 **get_agent_server_env(),
             },
