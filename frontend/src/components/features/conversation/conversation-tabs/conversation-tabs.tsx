@@ -44,7 +44,9 @@ export function ConversationTabs() {
 
   const { data: conversation } = useActiveConversation();
   const { repositoryInfo } = useTaskPolling();
-  const isRepositoryConversation = !!(conversation?.selected_repository || repositoryInfo?.selectedRepository);
+  const isRepositoryConversation = !!(
+    conversation?.selected_repository || repositoryInfo?.selectedRepository
+  );
 
   const shouldUsePlanningAgent = USE_PLANNING_AGENT();
 
