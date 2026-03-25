@@ -90,7 +90,7 @@ export function SubConversationList({
               conversationStatus={status}
               conversationId={conv.id}
               conversationVersion="V1"
-              trigger={conv.trigger}
+              trigger={conv.trigger ?? undefined}
               contextMenuOpen={openContextMenuId === conv.id}
               onContextMenuToggle={(isOpen) =>
                 onContextMenuToggle(isOpen ? conv.id : null)
