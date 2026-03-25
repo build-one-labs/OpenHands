@@ -396,6 +396,14 @@ async def create_conversation(
         str | None,
         Field(description='Optional title for the new conversation'),
     ] = None,
+    system_message_suffix: Annotated[
+        str | None,
+        Field(
+            description='Optional additional system prompt text appended to the default system message. '
+            'Use this to give the sub-conversation specific instructions, constraints, or context '
+            'beyond what is in the initial_message.'
+        ),
+    ] = None,
     wait_for_completion: Annotated[
         bool,
         Field(
@@ -453,6 +461,8 @@ async def create_conversation(
     }
     if title:
         payload['title'] = title
+    if system_message_suffix:
+        payload['system_message_suffix'] = system_message_suffix
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
