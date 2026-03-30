@@ -38,7 +38,12 @@ export function GitControlBarBranchButton({
       )}
     >
       <div className="w-3 h-3 flex items-center justify-center flex-shrink-0">
-        <BranchIcon width={12} height={12} className="text-content" color="currentColor" />
+        <BranchIcon
+          width={12}
+          height={12}
+          className="text-content"
+          color="currentColor"
+        />
       </div>
       <div
         className="font-normal text-content text-sm leading-5 truncate"

@@ -27,7 +27,10 @@ export function ChatSendButton({
       onClick={handleSubmit}
       disabled={disabled}
     >
-      <ArrowUp className="text-content" color={disabled ? "#959CB2" : "currentColor"} />
+      <ArrowUp
+        className="text-content"
+        color={disabled ? "#959CB2" : "currentColor"}
+      />
     </button>
   );
 }

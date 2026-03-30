@@ -46,7 +46,12 @@ export function GitControlBarRepoButton({
             className="w-3 h-3 inline-flex"
           />
         ) : (
-          <RepoForkedIcon width={12} height={12} className="text-content" color="currentColor" />
+          <RepoForkedIcon
+            width={12}
+            height={12}
+            className="text-content"
+            color="currentColor"
+          />
         )}
       </div>
       <div
