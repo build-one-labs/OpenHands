@@ -15,7 +15,7 @@ import { Toaster } from "react-hot-toast";
 function getThemeFromUrl(): "dark" | "light" {
   if (typeof window === "undefined") return "dark";
   const params = new URLSearchParams(window.location.search);
-  const theme = params.get("theme");
+  const theme = params.get("colorScheme");
   return theme === "light" ? "light" : "dark";
 }
 
