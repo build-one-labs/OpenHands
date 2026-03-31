@@ -72,6 +72,16 @@ html.light .tab-container {
   background: transparent !important;
 }
 
+html.light [data-testid="scroll-to-bottom"] svg path,
+html.light [data-testid="copy-to-clipboard"] svg path {
+  fill: #0f172a !important;
+}
+
+html.light [data-testid="scroll-to-bottom"],
+html.light [data-testid="copy-to-clipboard"] {
+  border: none !important;
+}
+
 html.light [data-testid="interactive-chat-box"] .bg-base-secondary {
   background: rgba(255, 255, 255, 0.92) !important;
   border: 1px solid rgba(200, 195, 220, 0.6) !important;
