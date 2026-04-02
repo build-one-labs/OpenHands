@@ -4,6 +4,7 @@ import { AgentState } from "#/types/agent-state";
 import { displayErrorToast } from "#/utils/custom-toast-handlers";
 import { useEventStore } from "#/stores/use-event-store";
 import { useSendMessage } from "#/hooks/use-send-message";
+
 interface ServerError {
   error: boolean | string;
   message: string;
