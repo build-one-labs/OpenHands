@@ -437,6 +437,9 @@ async def get_conversation_skills(
     ),
     sandbox_service: SandboxService = sandbox_service_dependency,
     sandbox_spec_service: SandboxSpecService = sandbox_spec_service_dependency,
+    app_conversation_start_task_service: AppConversationStartTaskService = (
+        app_conversation_start_task_service_dependency
+    ),
 ) -> JSONResponse:
     """Get all skills associated with the conversation.
 
@@ -515,6 +518,28 @@ async def get_conversation_skills(
                 sandbox_spec.working_dir,
                 agent_server_url,
             )
+
+            # Include API-provided skills from the start request
+            try:
+                start_tasks_page = await app_conversation_start_task_service.search_app_conversation_start_tasks(
+                    conversation_id__eq=conversation_id,
+                    limit=1,
+                )
+                if start_tasks_page.items:
+                    start_task = start_tasks_page.items[0]
+                    if start_task.request.skills:
+                        api_skills = (
+                            app_conversation_service._convert_skill_inputs_to_skills(
+                                start_task.request.skills
+                            )
+                        )
+                        all_skills = app_conversation_service._merge_skills(
+                            [all_skills, api_skills]
+                        )
+            except Exception as e:
+                logger.warning(
+                    f'Failed to load API skills for conversation {conversation_id}: {e}'
+                )
 
         logger.info(
             f'Loaded {len(all_skills)} skills for conversation {conversation_id}: '

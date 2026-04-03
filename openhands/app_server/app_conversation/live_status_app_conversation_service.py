@@ -33,6 +33,7 @@ from openhands.app_server.app_conversation.app_conversation_models import (
     AppConversationStartTask,
     AppConversationStartTaskStatus,
     AppConversationUpdateRequest,
+    SkillInput,
 )
 from openhands.app_server.app_conversation.app_conversation_service import (
     AppConversationService,
@@ -331,6 +332,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     remote_workspace=remote_workspace,
                     selected_repository=request.selected_repository,
                     environment_url=request.environment_url,
+                    skill_inputs=request.skills,
                 )
             )
 
@@ -1246,6 +1248,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         remote_workspace: AsyncRemoteWorkspace | None,
         selected_repository: str | None,
         working_dir: str,
+        skill_inputs: list[SkillInput] | None = None,
     ) -> StartConversationRequest:
         """Finalize the conversation request with experiment variants and skills.
 
@@ -1260,6 +1263,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             remote_workspace: Optional remote workspace for skills loading
             selected_repository: Optional repository name
             working_dir: Working directory path
+            skill_inputs: Optional inline skills from the API request
 
         Returns:
             Complete StartConversationRequest ready for use
@@ -1286,6 +1290,11 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 _logger.warning(f'Failed to load skills: {e}', exc_info=True)
                 # Continue without skills - don't fail conversation startup
 
+        # Merge API-provided skills last (highest precedence)
+        if skill_inputs:
+            api_skills = self._convert_skill_inputs_to_skills(skill_inputs)
+            agent = self._create_agent_with_skills(agent, api_skills)
+
         # Create and return the final request
         return StartConversationRequest(
             conversation_id=conversation_id,
@@ -1311,6 +1320,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         remote_workspace: AsyncRemoteWorkspace | None = None,
         selected_repository: str | None = None,
         environment_url: str | None = None,
+        skill_inputs: list[SkillInput] | None = None,
     ) -> StartConversationRequest:
         """Build a complete conversation request for a user.
 
@@ -1361,6 +1371,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             remote_workspace,
             selected_repository,
             working_dir,
+            skill_inputs=skill_inputs,
         )
 
     async def update_agent_server_conversation_title(

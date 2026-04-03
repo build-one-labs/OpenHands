@@ -23,6 +23,14 @@ export interface V1SendMessageRequest {
   content: V1MessageContent[];
 }
 
+export interface SkillInput {
+  name: string;
+  content: string;
+  type?: "repo" | "knowledge";
+  triggers?: string[];
+  description?: string;
+}
+
 export interface V1AppConversationStartRequest {
   sandbox_id?: string | null;
   initial_message?: V1SendMessageRequest | null;
@@ -38,6 +46,7 @@ export interface V1AppConversationStartRequest {
   agent_type?: "default" | "plan";
   environment_url?: string | null;
   environment_conversation_id?: string | null;
+  skills?: SkillInput[] | null;
 }
 
 export type V1AppConversationStartTaskStatus =
