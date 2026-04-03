@@ -124,3 +124,16 @@ export interface Skill {
 export interface GetSkillsResponse {
   skills: Skill[];
 }
+
+export interface McpServer {
+  name: string;
+  url?: string;
+  transport?: string;
+  command?: string;
+  args?: string[];
+  source?: string;
+}
+
+export interface GetMcpsResponse {
+  mcp_servers: McpServer[];
+}
