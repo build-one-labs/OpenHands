@@ -63,6 +63,7 @@ from openhands.app_server.event_callback.set_title_callback_processor import (
 from openhands.app_server.sandbox.docker_sandbox_service import DockerSandboxService
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
+    WORKER_1,
     SandboxInfo,
     SandboxStatus,
 )
@@ -333,6 +334,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     selected_repository=request.selected_repository,
                     environment_url=request.environment_url,
                     skill_inputs=request.skills,
+                    api_mcp_servers=request.mcp_servers,
                 )
             )
 
@@ -468,6 +470,55 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 f'Failed to clean up sandbox {sandbox_id} after conversation start failure',
                 exc_info=True,
             )
+
+    @staticmethod
+    def _resolve_mcp_placeholders(
+        mcp_servers: dict[str, dict],
+        environment_url: str | None,
+        sandbox: SandboxInfo | None = None,
+    ) -> dict[str, dict]:
+        """Resolve placeholders in API-provided MCP server configs.
+
+        Supported placeholders:
+            {environment_url} - replaced with the environment URL (trailing / stripped).
+                When no environment_url is provided but a sandbox is available,
+                falls back to the sandbox WORKER_1 exposed URL (the app running
+                inside the agent sandbox).
+
+        Args:
+            mcp_servers: MCP server configs potentially containing placeholders
+            environment_url: The environment URL to substitute, or None
+            sandbox: SandboxInfo for resolving sandbox worker URLs as fallback
+
+        Returns:
+            New dict with all string values having placeholders resolved
+        """
+        resolved_env_url = environment_url
+        if not resolved_env_url and sandbox and sandbox.exposed_urls:
+            worker_eu = next(
+                (eu for eu in sandbox.exposed_urls if eu.name == WORKER_1),
+                None,
+            )
+            if worker_eu:
+                resolved_env_url = worker_eu.url
+
+        replacements: dict[str, str] = {}
+        if resolved_env_url:
+            replacements['{environment_url}'] = resolved_env_url.rstrip('/')
+
+        if not replacements:
+            return mcp_servers
+
+        resolved: dict[str, dict] = {}
+        for name, config in mcp_servers.items():
+            resolved_config: dict = {}
+            for key, value in config.items():
+                if isinstance(value, str):
+                    for placeholder, replacement in replacements.items():
+                        value = value.replace(placeholder, replacement)
+                resolved_config[key] = value
+            resolved[name] = resolved_config
+        return resolved
 
     def _add_environment_mcp_server(
         self, mcp_servers: dict[str, Any], environment_url: str
@@ -1321,6 +1372,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         selected_repository: str | None = None,
         environment_url: str | None = None,
         skill_inputs: list[SkillInput] | None = None,
+        api_mcp_servers: dict[str, dict] | None = None,
     ) -> StartConversationRequest:
         """Build a complete conversation request for a user.
 
@@ -1328,8 +1380,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         1. Setting up git provider secrets
         2. Configuring LLM and MCP settings
         3. Optionally adding a remote environment as an MCP server
-        4. Creating an agent with appropriate context
-        5. Finalizing the request with skills and experiment variants
+        4. Merging API-provided MCP servers
+        5. Creating an agent with appropriate context
+        6. Finalizing the request with skills and experiment variants
         """
         user = await self.user_context.get_user_info()
         workspace = LocalWorkspace(working_dir=working_dir)
@@ -1348,6 +1401,19 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             mcp_servers = mcp_config.get('mcpServers', {})
             self._add_environment_mcp_server(mcp_servers, environment_url)
             mcp_config['mcpServers'] = mcp_servers
+
+        # Merge API-provided MCP servers (highest precedence)
+        if api_mcp_servers:
+            api_mcp_servers = self._resolve_mcp_placeholders(
+                api_mcp_servers, environment_url, sandbox
+            )
+            mcp_servers = mcp_config.get('mcpServers', {})
+            mcp_servers.update(api_mcp_servers)
+            mcp_config['mcpServers'] = mcp_servers
+            _logger.info(
+                f'Merged {len(api_mcp_servers)} API-provided MCP servers: '
+                f'{list(api_mcp_servers.keys())}'
+            )
 
         # Create agent with context
         agent = self._create_agent_with_context(

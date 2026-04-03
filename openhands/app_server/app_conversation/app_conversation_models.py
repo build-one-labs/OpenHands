@@ -137,6 +137,10 @@ class AppConversationStartRequest(OpenHandsModel):
     # Inline skills to load into the conversation
     skills: list[SkillInput] | None = None
 
+    # MCP server configurations to merge into the conversation
+    # Format: {'server-name': {'url': '...', 'transport': 'http'}, ...}
+    mcp_servers: dict[str, dict] | None = None
+
     @field_validator('environment_url')
     @classmethod
     def validate_environment_url(cls, v: str | None) -> str | None:

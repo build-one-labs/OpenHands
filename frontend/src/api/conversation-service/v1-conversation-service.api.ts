@@ -65,6 +65,7 @@ class V1ConversationService {
     parent_conversation_id?: string,
     agent_type?: "default" | "plan",
     skills?: SkillInput[],
+    mcpServers?: Record<string, Record<string, unknown>>,
   ): Promise<V1AppConversationStartTask> {
     const body: V1AppConversationStartRequest = {
       selected_repository: selectedRepository,
@@ -75,6 +76,7 @@ class V1ConversationService {
       parent_conversation_id: parent_conversation_id || null,
       agent_type,
       skills: skills || null,
+      mcp_servers: mcpServers || null,
     };
 
     // Add initial message if provided

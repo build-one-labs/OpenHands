@@ -47,6 +47,7 @@ export interface V1AppConversationStartRequest {
   environment_url?: string | null;
   environment_conversation_id?: string | null;
   skills?: SkillInput[] | null;
+  mcp_servers?: Record<string, Record<string, unknown>> | null;
 }
 
 export type V1AppConversationStartTaskStatus =

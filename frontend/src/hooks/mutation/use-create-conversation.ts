@@ -21,6 +21,7 @@ interface CreateConversationVariables {
   parentConversationId?: string;
   agentType?: "default" | "plan";
   skills?: SkillInput[];
+  mcpServers?: Record<string, Record<string, unknown>>;
 }
 
 // Response type that combines both V1 and legacy responses
@@ -52,6 +53,7 @@ export const useCreateConversation = () => {
         parentConversationId,
         agentType,
         skills,
+        mcpServers,
       } = variables;
 
       const useV1 = !!settings?.v1_enabled && !createMicroagent;
@@ -68,6 +70,7 @@ export const useCreateConversation = () => {
           parentConversationId,
           agentType,
           skills,
+          mcpServers,
         );
 
         // Return a special task ID that the frontend will recognize
