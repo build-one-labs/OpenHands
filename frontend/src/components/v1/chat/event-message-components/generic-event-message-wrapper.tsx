@@ -41,10 +41,8 @@ export function GenericEventMessageWrapper({
   if (actionEvent && typeof details === "string") {
     const actionContent = getActionContent(actionEvent);
     if (actionContent) {
-      const resultMatch = details.match(
-        /\n*\*\*(?:Result|Error|Output):\*\*/,
-      );
-      if (resultMatch && resultMatch.index !== undefined) {
+      const resultMatch = details.match(/\n*\*\*(?:Result|Error|Output):\*\*/);
+      if (resultMatch?.index !== undefined) {
         const head = details.slice(0, resultMatch.index).trimEnd();
         const tail = details.slice(resultMatch.index).trimStart();
         mergedDetails = `${head}\n\n${actionContent}\n\n${tail}`;
