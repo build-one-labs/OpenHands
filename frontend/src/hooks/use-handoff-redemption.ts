@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+
 import AuthService from "#/api/auth-service/auth-service.api";
 
 const HANDOFF_PARAM = "handoff_code";
@@ -11,21 +11,21 @@ const inFlight = new Map<string, Promise<void>>();
 
 /**
  * Detects ?handoff_code=<code> on initial page load, redeems it for a session
- * cookie at our origin, strips the param from the URL, and re-runs auth +
- * any errored queries so the layout re-evaluates with the new cookie.
+ * cookie at our origin, then performs a full navigation to the param-stripped
+ * URL so the SPA reloads with the cookie already attached to every request.
  *
- * Returns { isRedeeming } — true until the redeem call settles AND any
- * 401-corpse queries have refetched. Callers should gate render so we don't
- * flash unauthenticated content (or worse, navigate away on stale errors)
- * before the cookie is established.
+ * Why full navigation instead of in-place refetch: Chromium has a timing
+ * window where a Partitioned cookie set on an XHR response isn't yet attached
+ * to immediately-following XHRs in the same page lifetime. The post-redeem
+ * /api/authenticate call ends up cookie-less and the SPA bounces to /login.
+ * A full navigation matches what the production middleware does (302 to the
+ * clean URL) and avoids the race entirely.
  *
  * In production the FastAPI middleware redeems before the SPA loads, so the
  * param is gone and this hook is a no-op. In dev (Vite serves the HTML) the
  * middleware never sees the request, so this hook is the redemption path.
  */
 export const useHandoffRedemption = () => {
-  const queryClient = useQueryClient();
-
   const [isRedeeming, setIsRedeeming] = useState(() => {
     if (typeof window === "undefined") return false;
     return new URLSearchParams(window.location.search).has(HANDOFF_PARAM);
@@ -40,17 +40,16 @@ export const useHandoffRedemption = () => {
       return undefined;
     }
 
-    const stripParam = () => {
+    const cleanUrl = (() => {
       const p = new URLSearchParams(window.location.search);
-      if (!p.has(HANDOFF_PARAM)) return;
       p.delete(HANDOFF_PARAM);
       const search = p.toString();
-      const newUrl =
+      return (
         window.location.pathname +
         (search ? `?${search}` : "") +
-        window.location.hash;
-      window.history.replaceState({}, "", newUrl);
-    };
+        window.location.hash
+      );
+    })();
 
     let cancelled = false;
 
@@ -71,29 +70,15 @@ export const useHandoffRedemption = () => {
     (async () => {
       await promise;
       if (cancelled) return;
-
-      stripParam();
-
-      // Refetch auth so isAuthed flips before any consumer reacts to it.
-      await queryClient.refetchQueries({
-        queryKey: ["user", "authenticated"],
-      });
-
-      // Any query that 401'd before the cookie landed is now stuck in error
-      // state. Refetch them so consumers like conversation.tsx don't see a
-      // stale "no data + authed" combo and bounce to /.
-      await queryClient.refetchQueries({
-        predicate: (query) => query.state.status === "error",
-      });
-
-      if (cancelled) return;
-      setIsRedeeming(false);
+      // Full navigation to the clean URL so the next page load picks up the
+      // cookie. replace() so the dirty URL doesn't sit in history.
+      window.location.replace(cleanUrl);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [isRedeeming, queryClient]);
+  }, [isRedeeming]);
 
   return { isRedeeming };
 };
