@@ -385,28 +385,50 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 f'git_provider={request.git_provider}'
             )
 
-            # Generate the title up-front (via the agent-server's
-            # /generate_title, backed by the SDK's title_utils) so the first
-            # AppConversationInfo we save already has the real LLM title.
+            # Generate the title up-front by calling the SDK's title_utils
+            # *directly* in this process, using the same LLM that was just
+            # configured for the agent. This avoids depending on the
+            # agent-server's `/generate_title` endpoint, which is missing
+            # from older agent-server images.
             resolved_title = request.title
-            if not resolved_title and request.initial_message:
-                try:
-                    generate_title_url = replace_localhost_hostname_for_docker(
-                        f'{agent_server_url}/api/conversations/{info.id.hex}/generate_title'
-                    )
-                    title_response = await self.httpx_client.post(
-                        generate_title_url,
-                        headers={'X-Session-API-Key': sandbox.session_api_key},
-                        json={},
-                        timeout=30,
-                    )
-                    title_response.raise_for_status()
-                    resolved_title = title_response.json().get('title') or None
-                except Exception as title_exc:
-                    _logger.warning(
-                        f'Eager title generation failed for conversation '
-                        f'{info.id.hex}: {title_exc}'
-                    )
+            if not request.title and request.initial_message:
+                initial_text = ' '.join(
+                    c.text
+                    for c in (request.initial_message.content or [])
+                    if getattr(c, 'text', None)
+                ).strip()
+                if initial_text:
+                    try:
+                        # title_utils.generate_title_with_llm is sync and
+                        # makes a blocking LLM call — run it in a thread.
+                        from openhands.sdk.conversation.title_utils import (
+                            generate_title_with_llm,
+                        )
+
+                        # Newer Anthropic models (e.g. claude-opus-4-7)
+                        # reject `temperature` outright; some older Claudes
+                        # reject `temperature` + `top_p` together. The SDK
+                        # auto-fills temperature=0 and top_p=1, which trips
+                        # both. For title generation we don't need either
+                        # knob — copy the LLM with both nulled out so
+                        # litellm omits them from the request.
+                        title_llm = start_conversation_request.agent.llm.model_copy(
+                            update={'temperature': None, 'top_p': None}
+                        )
+
+                        loop = asyncio.get_running_loop()
+                        resolved_title = await loop.run_in_executor(
+                            None,
+                            generate_title_with_llm,
+                            initial_text,
+                            title_llm,
+                            50,
+                        )
+                    except Exception as title_exc:
+                        _logger.warning(
+                            f'In-process title generation failed for '
+                            f'{info.id.hex}: {title_exc}'
+                        )
 
             final_title = (
                 resolved_title

@@ -105,7 +105,7 @@ function ServedApp() {
 
   return (
     <div className="h-full w-full flex flex-col">
-      <div className="browser-bar w-full p-2 flex items-center gap-4 border-b border-neutral-600">
+      <div className="browser-bar hidden w-full p-2 flex items-center gap-4 border-b border-neutral-600">
         <button
           type="button"
           onClick={() => window.open(externalUrl, "_blank")}
@@ -149,7 +149,7 @@ function ServedApp() {
         key={refreshKey}
         title={t(I18nKey.SERVED_APP$TITLE)}
         src={fullUrl}
-        className="w-full h-full custom-scrollbar-always"
+        className="w-full h-full custom-scrollbar-always border-dashed border-2 border-[blue]"
       />
     </div>
   );
