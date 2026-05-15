@@ -39,8 +39,12 @@ export function GenericEventMessageWrapper({
   // tool description still appears first.
   let mergedDetails: string | React.ReactNode = details;
   if (actionEvent && typeof details === "string") {
-    const actionContent = getActionContent(actionEvent);
+    let actionContent = getActionContent(actionEvent);
     if (actionContent) {
+      // Both action and observation may emit a leading "**Tool:** X" line.
+      // The observation's version is canonical (it owns the tool name in the
+      // merged view), so strip it from the action content to avoid duplication.
+      actionContent = actionContent.replace(/^\*\*Tool:\*\*[^\n]*\n+/, "");
       const resultMatch = details.match(/\n*\*\*(?:Result|Error|Output):\*\*/);
       if (resultMatch?.index !== undefined) {
         const head = details.slice(0, resultMatch.index).trimEnd();
