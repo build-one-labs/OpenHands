@@ -75,10 +75,14 @@ const getExecuteBashActionContent = (
 };
 
 // Tool Actions
-const getMCPToolActionContent = (action: MCPToolAction): string =>
-  // The block title (e.g. "Calling Build.One tool" or "Build.One tool called")
-  // already labels this section, so we only emit the arguments here.
-  `**Arguments:**\n\`\`\`json\n${JSON.stringify(action.data, null, 2)}\n\`\`\``;
+const getMCPToolActionContent = (event: ActionEvent<MCPToolAction>): string => {
+  // The block title (e.g. "Calling Build.One tool" / "Build.One tool called")
+  // is generic, so include the specific tool name here. When this action is
+  // merged with its observation, the wrapper dedupes the duplicate **Tool:**
+  // line so we never render it twice.
+  const toolLine = event.tool_name ? `**Tool:** ${event.tool_name}\n\n` : "";
+  return `${toolLine}**Arguments:**\n\`\`\`json\n${JSON.stringify(event.action.data, null, 2)}\n\`\`\``;
+};
 
 // Simple Actions
 const getThinkActionContent = (action: ThinkAction): string => action.thought;
@@ -203,7 +207,7 @@ export const getActionContent = (event: ActionEvent): string => {
       );
 
     case "MCPToolAction":
-      return getMCPToolActionContent(action);
+      return getMCPToolActionContent(event as ActionEvent<MCPToolAction>);
 
     case "ThinkAction":
       return getThinkActionContent(action);

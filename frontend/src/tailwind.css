@@ -128,35 +128,11 @@ html.light [data-testid="markdown-renderer"] h6 {
   color: #111827 !important;
 }
 
-/* Code blocks: only force dark text where we ALSO override the background to a light
-   gray (see the user-message/agent-message rule below). Other markdown contexts
-   (e.g. MCP tool calls) keep their dark code-block background and need the
-   default light syntax-highlighter colors — overriding text globally there
-   produces dark-on-dark. */
-html.light [data-testid="user-message"] pre,
-html.light [data-testid="user-message"] pre code,
-html.light [data-testid="user-message"] pre *,
-html.light [data-testid="agent-message"] pre,
-html.light [data-testid="agent-message"] pre code,
-html.light [data-testid="agent-message"] pre * {
-  color: #1f2937 !important;
-}
-
-/* Inline code only (not code inside pre) */
-html.light [data-testid="user-message"] code:not(pre code),
-html.light [data-testid="agent-message"] code:not(pre code) {
-  background-color: #ECECEC !important;
-  color: #606060 !important;
-  border-color: #d1d5db !important;
-}
-
-/* Code blocks: pre, syntax-highlighted divs */
-html.light [data-testid="user-message"] pre,
-html.light [data-testid="agent-message"] pre,
-html.light [data-testid="agent-message"] div[class*="language-"] {
-  background-color: #f5f5f5 !important;
-  border-color: #d1d5db !important;
-}
+/* Code blocks render their own theme-appropriate colors via the React
+   `code` component (oneLight for light theme, vscDarkPlus for dark) — so we
+   intentionally do NOT force token colors here. Globally overriding `pre *`
+   destroys syntax highlighting and produces dark-on-dark on the
+   SyntaxHighlighter wrapper (which has its own inline background). */
 
 /* Light theme: task list (in-conversation tasks panel) — task-item.tsx hardcodes
    text-white / text-[#A3A3A3] which are unreadable on a light background. */
