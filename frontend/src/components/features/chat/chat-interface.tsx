@@ -63,6 +63,21 @@ function getEntryPoint(
   return "direct";
 }
 
+// Events are appended in WebSocket-arrival order, which is not always
+// chronological — a live event can land before the REST history resolves.
+// Sort by event timestamp so messages always render in the order they
+// happened.
+function compareByTimestamp(
+  a: { timestamp?: string },
+  b: { timestamp?: string },
+): number {
+  const aTs = a.timestamp ?? "";
+  const bTs = b.timestamp ?? "";
+  if (aTs < bTs) return -1;
+  if (aTs > bTs) return 1;
+  return 0;
+}
+
 export function ChatInterface() {
   const posthog = usePostHog();
   const { setMessageToSend } = useConversationStore();
@@ -137,10 +152,14 @@ export function ChatInterface() {
   const v0Events = storeEvents
     .filter(isV0Event)
     .filter(isActionOrObservation)
-    .filter(shouldRenderEvent);
+    .filter(shouldRenderEvent)
+    .sort(compareByTimestamp);
 
   // Filter V1 events - use uiEvents for rendering (actions replaced by observations)
-  const v1UiEvents = uiEvents.filter(isV1Event).filter(shouldRenderV1Event);
+  const v1UiEvents = uiEvents
+    .filter(isV1Event)
+    .filter(shouldRenderV1Event)
+    .sort(compareByTimestamp);
   // Keep full v1 events for lookups (includes both actions and observations)
   const v1FullEvents = storeEvents.filter(isV1Event);
 
@@ -246,6 +265,28 @@ export function ChatInterface() {
   const v1UserEventsExist = hasV1UserEvent(v1FullEvents);
   const userEventsExist = v0UserEventsExist || v1UserEventsExist;
 
+  // The typing indicator should stay visible for the whole time the agent is
+  // working on a turn — not only while `curAgentState` is exactly RUNNING.
+  // During a single turn the agent passes through several non-RUNNING states
+  // (e.g. while a tool call is executing or between LLM steps), so gating on
+  // RUNNING alone makes the indicator flicker off mid-turn. Instead, show it
+  // whenever the agent has neither handed the turn back to the user nor
+  // halted.
+  const agentTurnEnded =
+    curAgentState === AgentState.AWAITING_USER_INPUT ||
+    curAgentState === AgentState.AWAITING_USER_CONFIRMATION ||
+    curAgentState === AgentState.FINISHED ||
+    curAgentState === AgentState.REJECTED ||
+    curAgentState === AgentState.ERROR ||
+    curAgentState === AgentState.STOPPED ||
+    curAgentState === AgentState.PAUSED ||
+    curAgentState === AgentState.RATE_LIMITED;
+  // A just-sent message may not have produced an agent status change yet, so
+  // a pending optimistic user message also counts as "agent about to work".
+  const conversationHasStarted = userEventsExist || !!optimisticUserMessage;
+  const showTypingIndicator =
+    conversationHasStarted && (!agentTurnEnded || !!optimisticUserMessage);
+
   // Get server status indicator props
   const isStartingStatus =
     curAgentState === AgentState.LOADING || curAgentState === AgentState.INIT;
@@ -332,8 +373,8 @@ export function ChatInterface() {
               )}
             </div>
 
-            <div className="absolute left-1/2 transform -translate-x-1/2 bottom-0 bg-base rounded-full p-1 z-10">
-              {curAgentState === AgentState.RUNNING && <TypingIndicator />}
+            <div className="absolute left-1/2 transform -translate-x-1/2 bottom-0 z-10">
+              {showTypingIndicator && <TypingIndicator />}
             </div>
 
             {!hitBottom && <ScrollToBottomButton onClick={scrollDomToBottom} />}

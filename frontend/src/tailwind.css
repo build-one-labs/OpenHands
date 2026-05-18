@@ -59,7 +59,7 @@ html.light .conversation-top-bar {
   flex-shrink: 0 !important;
   padding: 4px 12px !important;
   margin: 0px 5px 0px 15px !important;
-  background: rgba(255, 255, 255, 0.92) !important;
+  background: #95b1ff !important;
   border: 1px solid rgba(200, 195, 220, 0.5) !important;
   border-radius: 16px !important;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.04) !important;
