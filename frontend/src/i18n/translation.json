@@ -4927,6 +4927,22 @@
     "ja": "エージェントがタスクを実行中",
     "uk": "Агент виконує завдання"
   },
+  "CHAT_INTERFACE$AGENT_WORKING": {
+    "en": "Working...",
+    "de": "Arbeite...",
+    "zh-CN": "处理中...",
+    "zh-TW": "處理中...",
+    "ko-KR": "작업 중...",
+    "no": "Jobber...",
+    "it": "In corso...",
+    "pt": "Trabalhando...",
+    "es": "Trabajando...",
+    "ar": "جارٍ العمل...",
+    "fr": "En cours...",
+    "tr": "Çalışıyor...",
+    "ja": "作業中...",
+    "uk": "Виконується..."
+  },
   "CHAT_INTERFACE$AGENT_AWAITING_USER_INPUT_MESSAGE": {
     "en": "Agent is awaiting user input...",
     "de": "Agent wartet auf Benutzereingabe...",
