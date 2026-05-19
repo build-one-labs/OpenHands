@@ -43,6 +43,7 @@ services:
       # Source code bind mounts (hot-reload)
       - ./openhands:/app/openhands
       - ./skills:/app/skills
+      - ./environment_skills:/app/environment_skills
       - ./frontend:/app/frontend
       # Preserve node_modules from image (anonymous volume)
       - /app/frontend/node_modules
