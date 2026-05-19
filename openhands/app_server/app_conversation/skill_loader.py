@@ -11,15 +11,18 @@ All source-specific skill loading is handled by the agent-server.
 """
 
 import logging
+from pathlib import Path
 
 import httpx
 from pydantic import BaseModel
 
+import openhands
 from openhands.app_server.sandbox.sandbox_models import SandboxInfo
 from openhands.app_server.user.user_context import UserContext
 from openhands.integrations.provider import ProviderType
 from openhands.integrations.service_types import AuthenticationError
 from openhands.sdk.context.skills import Skill
+from openhands.sdk.context.skills.skill import load_skills_from_dir
 from openhands.sdk.context.skills.trigger import KeywordTrigger, TaskTrigger
 
 _logger = logging.getLogger(__name__)
@@ -402,3 +405,47 @@ def _convert_skill_info_to_skill(skill_info: SkillInfo) -> Skill:
         is_agentskills_format=skill_info.is_agentskills_format,
         mcp_tools=skill_info.mcp_tools,
     )
+
+
+# Skills bundled with OpenHands that load only when a conversation is connected
+# to an environment. Resolved relative to the installed ``openhands`` package,
+# mirroring how ``openhands.memory.memory`` locates the global ``skills/`` dir.
+ENVIRONMENT_SKILLS_DIR = Path(openhands.__file__).parent.parent / 'environment_skills'
+
+
+def load_environment_skills(skill_dir: Path | None = None) -> list[Skill]:
+    """Load skills bundled with OpenHands for environment-connected conversations.
+
+    These live in the top-level ``environment_skills/`` directory and are merged
+    into a conversation's skills only when it is started against a running
+    environment (see ``AppConversationServiceBase.load_and_merge_all_skills``).
+    They are intentionally kept separate from the top-level ``skills/``
+    directory, which is loaded unconditionally as global microagents by the V0
+    system (``openhands.memory.memory``).
+
+    Args:
+        skill_dir: Directory to load from. Defaults to the bundled
+            ``environment_skills/`` directory; overridable for testing.
+
+    Returns:
+        List of Skill objects, or an empty list if the directory is missing or
+        loading fails. Never raises.
+    """
+    skill_dir = skill_dir or ENVIRONMENT_SKILLS_DIR
+    if not skill_dir.is_dir():
+        _logger.debug(f'No environment skills directory at {skill_dir}')
+        return []
+
+    try:
+        repo_skills, knowledge_skills, agent_skills = load_skills_from_dir(skill_dir)
+    except Exception as e:
+        _logger.warning(f'Failed to load environment skills from {skill_dir}: {e}')
+        return []
+
+    skills: list[Skill] = []
+    for skills_dict in (repo_skills, knowledge_skills, agent_skills):
+        for skill in skills_dict.values():
+            skills.append(skill.model_copy(update={'source': 'environment'}))
+
+    _logger.info(f'Loaded {len(skills)} environment skills: {[s.name for s in skills]}')
+    return skills
