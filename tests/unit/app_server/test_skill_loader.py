@@ -22,6 +22,7 @@ from openhands.app_server.app_conversation.skill_loader import (
     _is_gitlab_repository,
     build_org_config,
     build_sandbox_config,
+    load_environment_skills,
     load_skills_from_agent_server,
 )
 from openhands.app_server.sandbox.sandbox_models import (
@@ -691,3 +692,59 @@ class TestGetOrgRepositoryUrl:
 
         # Assert
         assert result is None
+
+
+class TestLoadEnvironmentSkills:
+    """Test load_environment_skills function."""
+
+    def test_returns_empty_for_missing_directory(self, tmp_path):
+        """Returns empty list when the directory does not exist."""
+        result = load_environment_skills(tmp_path / 'does-not-exist')
+
+        assert result == []
+
+    def test_returns_empty_for_empty_directory(self, tmp_path):
+        """Returns empty list when the directory has no skill files."""
+        result = load_environment_skills(tmp_path)
+
+        assert result == []
+
+    def test_loads_keyword_skill_with_environment_source(self, tmp_path):
+        """Loads a legacy keyword skill and stamps source='environment'."""
+        # Arrange
+        skill_file = tmp_path / 'commit-data-changes.md'
+        skill_file.write_text(
+            '---\n'
+            'name: commit-data-changes\n'
+            'type: knowledge\n'
+            'version: 1.0.0\n'
+            'agent: CodeActAgent\n'
+            'triggers:\n'
+            '- commit\n'
+            '---\n\n'
+            '# Commit Data Changes\n\n'
+            'Instructions for committing data changes.\n'
+        )
+
+        # Act
+        result = load_environment_skills(tmp_path)
+
+        # Assert
+        assert len(result) == 1
+        skill = result[0]
+        assert isinstance(skill, Skill)
+        assert skill.source == 'environment'
+        assert isinstance(skill.trigger, KeywordTrigger)
+        assert 'commit' in skill.trigger.keywords
+
+    def test_returns_empty_on_load_error(self, tmp_path):
+        """Returns empty list (never raises) when loading fails."""
+        # Arrange / Act
+        with patch(
+            'openhands.app_server.app_conversation.skill_loader.load_skills_from_dir',
+            side_effect=Exception('boom'),
+        ):
+            result = load_environment_skills(tmp_path)
+
+        # Assert
+        assert result == []

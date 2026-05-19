@@ -191,6 +191,7 @@ packages = [
 ]
 include = [
   "skills/**/*",
+  "environment_skills/**/*",
 ]
 
 [tool.poetry.dependencies]

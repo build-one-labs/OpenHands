@@ -28,6 +28,7 @@ from openhands.app_server.app_conversation.app_conversation_service import (
 from openhands.app_server.app_conversation.skill_loader import (
     build_org_config,
     build_sandbox_config,
+    load_environment_skills,
     load_skills_from_agent_server,
 )
 from openhands.app_server.sandbox.sandbox_models import SandboxInfo
@@ -142,6 +143,18 @@ class AppConversationServiceBase(AppConversationService, ABC):
                 f'Loaded {len(all_skills)} total skills from agent-server: '
                 f'{[s.name for s in all_skills]}'
             )
+
+            # Environment skills bundled with OpenHands. Loaded here (rather
+            # than via the agent-server) so they apply only to conversations
+            # connected to an environment. Lowest precedence: a public/user/
+            # org/project skill with the same name overrides them.
+            environment_skills = load_environment_skills()
+            if environment_skills:
+                all_skills = self._merge_skills([environment_skills, all_skills])
+                _logger.debug(
+                    f'Merged {len(environment_skills)} environment skills; '
+                    f'{len(all_skills)} skills total'
+                )
 
             return all_skills
 

@@ -57,6 +57,7 @@ COPY --from=backend-builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
 # Copy backend source (layer cache; bind mount overrides at runtime)
 COPY ./skills ./skills
+COPY ./environment_skills ./environment_skills
 COPY ./openhands ./openhands
 COPY pyproject.toml poetry.lock README.md MANIFEST.in LICENSE ./
 
