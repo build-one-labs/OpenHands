@@ -9327,6 +9327,22 @@
     "de": "Bereitgestellte Anwendung",
     "uk": "Оброблений додаток"
   },
+  "SERVED_APP$PREVIEW_LABEL": {
+    "en": "Preview:",
+    "ja": "プレビュー:",
+    "zh-CN": "预览：",
+    "zh-TW": "預覽：",
+    "ko-KR": "미리보기:",
+    "no": "Forhåndsvisning:",
+    "it": "Anteprima:",
+    "pt": "Pré-visualização:",
+    "es": "Vista previa:",
+    "ar": "معاينة:",
+    "fr": "Aperçu :",
+    "tr": "Önizleme:",
+    "de": "Vorschau:",
+    "uk": "Попередній перегляд:"
+  },
   "CONVERSATION$UNKNOWN": {
     "en": "unknown",
     "ja": "不明",
