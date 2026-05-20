@@ -8160,7 +8160,7 @@
     "uk": "Завантажити файл"
   },
   "ACTION_MESSAGE$RUN": {
-    "en": "Running <cmd>{{command}}</cmd>",
+    "en": "Running command",
     "zh-CN": "运行 <cmd>{{command}}</cmd>",
     "zh-TW": "執行 <cmd>{{command}}</cmd>",
     "ko-KR": "실행 <cmd>{{command}}</cmd>",
@@ -8352,7 +8352,7 @@
     "uk": "Керування завданнями"
   },
   "OBSERVATION_MESSAGE$RUN": {
-    "en": "Ran <cmd>{{command}}</cmd>",
+    "en": "Ran command",
     "zh-CN": "运行 <cmd>{{command}}</cmd>",
     "zh-TW": "執行 <cmd>{{command}}</cmd>",
     "ko-KR": "실행 <cmd>{{command}}</cmd>",
