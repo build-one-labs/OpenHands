@@ -35,12 +35,13 @@ export function GenericEventMessageWrapper({
   // observation details, so we keep the expandable block but skip merging the
   // action content (which would duplicate the "Command:" line).
   const isCommandEvent =
-    (isActionEvent(event) &&
+    !isSkillReadyEvent(event) &&
+    ((isActionEvent(event) &&
       (event.action.kind === "ExecuteBashAction" ||
         event.action.kind === "TerminalAction")) ||
-    (isObservationEvent(event) &&
-      (event.observation.kind === "ExecuteBashObservation" ||
-        event.observation.kind === "TerminalObservation"));
+      (isObservationEvent(event) &&
+        (event.observation.kind === "ExecuteBashObservation" ||
+          event.observation.kind === "TerminalObservation")));
 
   // If this wrapper is rendering an observation and we have the corresponding
   // action, splice the action's input content (e.g. MCP tool arguments) into
