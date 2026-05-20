@@ -21,6 +21,8 @@ export function GenericEventMessageWrapper({
   event,
   shouldShowConfirmationButtons,
 }: GenericEventMessageWrapperProps) {
+  const { title, details } = getEventContent(event);
+
   return (
     <div>
       {isOpenHandsAction(event) &&
@@ -30,8 +32,8 @@ export function GenericEventMessageWrapper({
         )}
 
       <GenericEventMessage
-        title={getEventContent(event).title}
-        details={getEventContent(event).details}
+        title={title}
+        details={details}
         success={
           isOpenHandsObservation(event)
             ? getObservationResult(event)
