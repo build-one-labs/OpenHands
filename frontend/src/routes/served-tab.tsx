@@ -83,10 +83,10 @@ function ServedApp() {
   }
 
   const fullUrl = (() => {
-    if (!path) return currentActiveHost;
     try {
       const url = new URL(currentActiveHost);
-      url.pathname = path;
+      if (path) url.pathname = path;
+      url.searchParams.set("overlay", "1");
       return url.toString();
     } catch {
       return currentActiveHost;
@@ -149,7 +149,7 @@ function ServedApp() {
         key={refreshKey}
         title={t(I18nKey.SERVED_APP$TITLE)}
         src={fullUrl}
-        className="w-full h-full custom-scrollbar-always border-dashed border-2 border-[blue]"
+        className="w-full h-full custom-scrollbar-always"
       />
     </div>
   );
