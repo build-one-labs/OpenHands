@@ -4,7 +4,7 @@ import { GenericEventMessage } from "../../../features/chat/generic-event-messag
 import { getEventContent } from "../event-content-helpers/get-event-content";
 import { getActionContent } from "../event-content-helpers/get-action-content";
 import { getObservationResult } from "../event-content-helpers/get-observation-result";
-import { isObservationEvent } from "#/types/v1/type-guards";
+import { isActionEvent, isObservationEvent } from "#/types/v1/type-guards";
 import {
   SkillReadyEvent,
   isSkillReadyEvent,
@@ -31,6 +31,18 @@ export function GenericEventMessageWrapper({
 }: GenericEventMessageWrapperProps) {
   const { title, details } = getEventContent(event);
 
+  // Command execution nodes already render the command + output in the
+  // observation details, so we keep the expandable block but skip merging the
+  // action content (which would duplicate the "Command:" line).
+  const isCommandEvent =
+    !isSkillReadyEvent(event) &&
+    ((isActionEvent(event) &&
+      (event.action.kind === "ExecuteBashAction" ||
+        event.action.kind === "TerminalAction")) ||
+      (isObservationEvent(event) &&
+        (event.observation.kind === "ExecuteBashObservation" ||
+          event.observation.kind === "TerminalObservation")));
+
   // If this wrapper is rendering an observation and we have the corresponding
   // action, splice the action's input content (e.g. MCP tool arguments) into
   // the observation details so users see it inside the same collapsible block.
@@ -38,7 +50,7 @@ export function GenericEventMessageWrapper({
   // "**Tool:** name") but *before* the Result/Error/Output section so the
   // tool description still appears first.
   let mergedDetails: string | React.ReactNode = details;
-  if (actionEvent && typeof details === "string") {
+  if (actionEvent && typeof details === "string" && !isCommandEvent) {
     let actionContent = getActionContent(actionEvent);
     if (actionContent) {
       // Both action and observation may emit a leading "**Tool:** X" line.

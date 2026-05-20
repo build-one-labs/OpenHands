@@ -8160,7 +8160,7 @@
     "uk": "Завантажити файл"
   },
   "ACTION_MESSAGE$RUN": {
-    "en": "Running <cmd>{{command}}</cmd>",
+    "en": "Running command",
     "zh-CN": "运行 <cmd>{{command}}</cmd>",
     "zh-TW": "執行 <cmd>{{command}}</cmd>",
     "ko-KR": "실행 <cmd>{{command}}</cmd>",
@@ -8352,7 +8352,7 @@
     "uk": "Керування завданнями"
   },
   "OBSERVATION_MESSAGE$RUN": {
-    "en": "Ran <cmd>{{command}}</cmd>",
+    "en": "Ran command",
     "zh-CN": "运行 <cmd>{{command}}</cmd>",
     "zh-TW": "執行 <cmd>{{command}}</cmd>",
     "ko-KR": "실행 <cmd>{{command}}</cmd>",
@@ -9326,6 +9326,22 @@
     "tr": "Sunulan Uygulama",
     "de": "Bereitgestellte Anwendung",
     "uk": "Оброблений додаток"
+  },
+  "SERVED_APP$PREVIEW_LABEL": {
+    "en": "Preview:",
+    "ja": "プレビュー:",
+    "zh-CN": "预览：",
+    "zh-TW": "預覽：",
+    "ko-KR": "미리보기:",
+    "no": "Forhåndsvisning:",
+    "it": "Anteprima:",
+    "pt": "Pré-visualização:",
+    "es": "Vista previa:",
+    "ar": "معاينة:",
+    "fr": "Aperçu :",
+    "tr": "Önizleme:",
+    "de": "Vorschau:",
+    "uk": "Попередній перегляд:"
   },
   "CONVERSATION$UNKNOWN": {
     "en": "unknown",

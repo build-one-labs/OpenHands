@@ -145,6 +145,9 @@ function ServedApp() {
           />
         </div>
       </div>
+      <div className="w-full p-[2px] pl-0 text-base font-normal text-content">
+        {t(I18nKey.SERVED_APP$PREVIEW_LABEL)}
+      </div>
       <iframe
         key={refreshKey}
         title={t(I18nKey.SERVED_APP$TITLE)}
