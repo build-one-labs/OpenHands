@@ -15,7 +15,8 @@ interface V1GitChange {
 class V1GitService {
   /**
    * Get git changes for a V1 conversation
-   * Routes through the HTTP proxy: GET /api/conversations/{id}/git/changes/{path}
+   * Routes through the HTTP proxy: GET /api/conversations/{id}/git/changes?path={path}
+   * (agent-server v1.21 takes the repo path as a `path` query parameter)
    * Maps V1 status types (ADDED, DELETED, etc.) to V0 format (A, D, etc.)
    */
   static async getGitChanges(
@@ -24,7 +25,7 @@ class V1GitService {
     path: string,
   ): Promise<GitChange[]> {
     const encodedPath = encodeURIComponent(path);
-    const url = `${conversationUrl}/git/changes/${encodedPath}`;
+    const url = `${conversationUrl}/git/changes?path=${encodedPath}`;
     const headers = buildSessionHeaders(sessionApiKey);
 
     // V1 API returns V1GitChangeStatus types, we need to map them to V0 format
@@ -46,7 +47,8 @@ class V1GitService {
 
   /**
    * Get git change diff for a specific file in a V1 conversation
-   * Routes through the HTTP proxy: GET /api/conversations/{id}/git/diff/{path}
+   * Routes through the HTTP proxy: GET /api/conversations/{id}/git/diff?path={path}
+   * (agent-server v1.21 takes the file path as a `path` query parameter)
    */
   static async getGitChangeDiff(
     conversationUrl: string | null | undefined,
@@ -54,7 +56,7 @@ class V1GitService {
     path: string,
   ): Promise<GitChangeDiff> {
     const encodedPath = encodeURIComponent(path);
-    const url = `${conversationUrl}/git/diff/${encodedPath}`;
+    const url = `${conversationUrl}/git/diff?path=${encodedPath}`;
     const headers = buildSessionHeaders(sessionApiKey);
 
     const { data } = await axios.get<GitChangeDiff>(url, { headers });
