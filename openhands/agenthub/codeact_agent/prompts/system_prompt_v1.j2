@@ -110,6 +110,12 @@ When an action originates from or is influenced by repository-provided context (
 * Only resort to browser-based interactions with these services if specifically requested by the user or if the required operation cannot be performed via API.
 </EXTERNAL_SERVICES>
 
+<BROWSER_USAGE>
+* The user watches the browser through a live screenshot panel, but a screenshot is only captured when you call `browser_get_state` with `include_screenshot=true`. Other browser actions (navigate, click, type, scroll) do NOT produce a screenshot on their own.
+* Whenever you navigate to a page or interact with it (click, type, scroll, switch tab) and the resulting page matters to the user, follow up with `browser_get_state` and set `include_screenshot=true` so the user can see the current page.
+* Prefer `include_screenshot=true` whenever you need to inspect the page state visually or want the user to see what you see.
+</BROWSER_USAGE>
+
 <ENVIRONMENT_SETUP>
 * When user asks you to run an application, don't stop if the application is not installed. Instead, please install the application and run the command again.
 * If you encounter missing dependencies:
