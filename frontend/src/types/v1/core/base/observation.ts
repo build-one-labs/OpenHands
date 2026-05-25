@@ -41,13 +41,13 @@ export interface ThinkObservation extends ObservationBase<"ThinkObservation"> {
 
 export interface BrowserObservation extends ObservationBase<"BrowserObservation"> {
   /**
-   * The output message from the browser operation
+   * Content returned from the browser operation as a list of TextContent/ImageContent objects.
    */
-  output: string;
+  content: Array<TextContent | ImageContent>;
   /**
-   * Error message if any
+   * Whether the observation indicates an error.
    */
-  error: string | null;
+  is_error: boolean;
   /**
    * Base64 screenshot data if available
    */

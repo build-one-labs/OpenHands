@@ -1,9 +1,10 @@
 import { create } from "zustand";
 
 interface BrowserState {
-  // URL of browser window (placeholder for now, will be replaced with the actual URL later)
+  // URL of the page currently shown in the browser. Empty until the agent
+  // navigates somewhere (updated from browser actions/observations).
   url: string;
-  // Base64-encoded screenshot of browser window (placeholder for now, will be replaced with the actual screenshot later)
+  // Base64-encoded screenshot of browser window
   screenshotSrc: string;
 }
 
@@ -14,7 +15,7 @@ interface BrowserStore extends BrowserState {
 }
 
 const initialState: BrowserState = {
-  url: "https://github.com/OpenHands/OpenHands",
+  url: "",
   screenshotSrc: "",
 };
 

@@ -14,8 +14,8 @@ describe("getObservationContent - BrowserObservation", () => {
       action_id: "action-id",
       observation: {
         kind: "BrowserObservation",
-        output: "Browser action completed",
-        error: null,
+        content: [{ type: "text", text: "Browser action completed" }],
+        is_error: false,
         screenshot_data: "base64data",
       },
     };
@@ -36,8 +36,8 @@ describe("getObservationContent - BrowserObservation", () => {
       action_id: "action-id",
       observation: {
         kind: "BrowserObservation",
-        output: "",
-        error: "Browser action failed",
+        content: [{ type: "text", text: "Browser action failed" }],
+        is_error: true,
         screenshot_data: null,
       },
     };
@@ -58,8 +58,8 @@ describe("getObservationContent - BrowserObservation", () => {
       action_id: "action-id",
       observation: {
         kind: "BrowserObservation",
-        output: "",
-        error: null,
+        content: [],
+        is_error: false,
         screenshot_data: "base64data",
       },
     };
@@ -79,8 +79,8 @@ describe("getObservationContent - BrowserObservation", () => {
       action_id: "action-id",
       observation: {
         kind: "BrowserObservation",
-        output: "Page loaded successfully",
-        error: null,
+        content: [{ type: "text", text: "Page loaded successfully" }],
+        is_error: false,
         screenshot_data: null,
       },
     };

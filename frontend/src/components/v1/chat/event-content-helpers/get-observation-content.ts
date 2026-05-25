@@ -92,18 +92,17 @@ const getBrowserObservationContent = (
   const { observation } = event;
 
   // Extract text content from the observation
-  const textContent =
-    "content" in observation && Array.isArray(observation.content)
-      ? observation.content
-          .filter((c) => c.type === "text")
-          .map((c) => c.text)
-          .join("\n")
-      : observation.output || "";
+  const textContent = Array.isArray(observation.content)
+    ? observation.content
+        .filter((c) => c.type === "text")
+        .map((c) => c.text)
+        .join("\n")
+    : "";
 
   let contentDetails = "";
 
-  if (observation.error) {
-    contentDetails += `**Error:**\n${observation.error}`;
+  if (observation.is_error && textContent) {
+    contentDetails += `**Error:**\n${textContent}`;
   } else if (textContent) {
     contentDetails += `**Output:**\n${textContent}`;
   } else {

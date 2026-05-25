@@ -34,6 +34,7 @@ import {
 } from "#/types/v1/type-guards";
 import { ConversationStateUpdateEventStats } from "#/types/v1/core/events/conversation-state-event";
 import { handleActionEventCacheInvalidation } from "#/utils/cache-utils";
+import { extractBrowserUrl } from "#/utils/extract-browser-url";
 import {
   buildWebSocketUrl,
   buildBashEventsWebSocketUrl,
@@ -415,7 +416,8 @@ export function ConversationWebSocketProvider({
             appendOutput(textContent);
           }
 
-          // Handle BrowserObservation events - update browser store with screenshot
+          // Handle BrowserObservation events - update browser store with
+          // the screenshot and the current page URL (when available).
           if (isBrowserObservationEvent(event)) {
             const { screenshot_data: screenshotData } = event.observation;
             if (screenshotData) {
@@ -423,6 +425,11 @@ export function ConversationWebSocketProvider({
                 ? screenshotData
                 : `data:image/png;base64,${screenshotData}`;
               useBrowserStore.getState().setScreenshotSrc(screenshotSrc);
+            }
+
+            const currentUrl = extractBrowserUrl(event.observation);
+            if (currentUrl) {
+              useBrowserStore.getState().setUrl(currentUrl);
             }
           }
 

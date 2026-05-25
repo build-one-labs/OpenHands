@@ -192,7 +192,7 @@ export const createMockExecuteBashObservationEvent = (
 export const createMockBrowserObservationEvent = (
   screenshotData: string | null = "base64-screenshot-data",
   output: string = "Browser action completed",
-  error: string | null = null,
+  isError: boolean = false,
 ) => ({
   id: "browser-obs-123",
   timestamp: new Date().toISOString(),
@@ -201,8 +201,8 @@ export const createMockBrowserObservationEvent = (
   tool_call_id: "browser-call-456",
   observation: {
     kind: "BrowserObservation",
-    output,
-    error,
+    content: [{ type: "text", text: output }],
+    is_error: isError,
     screenshot_data: screenshotData,
   },
   action_id: "browser-action-123",
