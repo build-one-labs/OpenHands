@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -101,6 +102,23 @@ _logger = logging.getLogger(__name__)
 
 # Sentinel for detecting StopIteration from thread pool executor
 _GENERATOR_STOP = object()
+
+# Custom Build.One system prompt for the default agent. The agent server renders
+# ``system_prompt_filename`` from its OWN filesystem when a conversation starts,
+# so the prompt file must be present there. Rather than depend on a SANDBOX_VOLUMES
+# mount (which is deploy-specific and previously broke environment connections), we
+# upload this file into the agent server at conversation start and reference it by
+# absolute path. ``__file__`` lives at openhands/app_server/app_conversation/, so
+# three dirnames up resolves the top-level ``openhands`` package directory.
+_OPENHANDS_PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+CUSTOM_SYSTEM_PROMPT_SRC = os.path.join(
+    _OPENHANDS_PACKAGE_DIR,
+    'agenthub',
+    'codeact_agent',
+    'prompts',
+    'system_prompt_v1.j2',
+)
+CUSTOM_SYSTEM_PROMPT_DEST = '/tmp/system_prompt_v1.j2'
 
 
 def _truncated_initial_message_title(
@@ -1309,6 +1327,62 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
 
         return llm, mcp_config
 
+    async def _resolve_custom_system_prompt_path(
+        self, remote_workspace: AsyncRemoteWorkspace | None
+    ) -> str | None:
+        """Write the Build.One system prompt to the agent server and return its path.
+
+        The agent server renders ``system_prompt_filename`` from its own filesystem
+        when the conversation starts, so the prompt must exist there. We write it
+        via the workspace command API rather than relying on a volume mount, so it
+        is present regardless of how the sandbox/agent server is provisioned (local
+        sandbox, remote environment connection, etc.).
+
+        The file content is base64-encoded and decoded on the agent server. This
+        avoids both shell-escaping issues with the template's Jinja2/quote syntax
+        and the SDK ``file_upload`` helper, whose URL construction returns 404 for
+        absolute destination paths.
+
+        On any failure we return ``None`` so the agent falls back to the default
+        system prompt instead of failing to start.
+        """
+        if remote_workspace is None:
+            return None
+        if not os.path.exists(CUSTOM_SYSTEM_PROMPT_SRC):
+            _logger.warning(
+                'Custom system prompt not found at %s; using default prompt',
+                CUSTOM_SYSTEM_PROMPT_SRC,
+            )
+            return None
+        try:
+            with open(CUSTOM_SYSTEM_PROMPT_SRC, 'rb') as f:
+                encoded = base64.b64encode(f.read()).decode('ascii')
+            # base64 output only contains [A-Za-z0-9+/=], so it is safe to embed
+            # inside single quotes in the shell command.
+            command = (
+                f"printf '%s' '{encoded}' | base64 -d > {CUSTOM_SYSTEM_PROMPT_DEST}"
+            )
+            result = await remote_workspace.execute_command(command)
+            if result.exit_code != 0:
+                _logger.warning(
+                    'Failed to write custom system prompt (exit %s: %s); '
+                    'using default prompt',
+                    result.exit_code,
+                    result.stderr,
+                )
+                return None
+            _logger.info(
+                'Wrote custom system prompt to agent server at %s',
+                CUSTOM_SYSTEM_PROMPT_DEST,
+            )
+            return CUSTOM_SYSTEM_PROMPT_DEST
+        except Exception:
+            _logger.warning(
+                'Error writing custom system prompt; using default prompt',
+                exc_info=True,
+            )
+            return None
+
     def _create_agent_with_context(
         self,
         llm: LLM,
@@ -1317,6 +1391,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         mcp_config: dict,
         condenser_max_size: int | None,
         secrets: dict[str, SecretValue] | None = None,
+        custom_system_prompt_path: str | None = None,
     ) -> Agent:
         """Create an agent with appropriate tools and context based on agent type.
 
@@ -1327,6 +1402,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             mcp_config: MCP configuration dictionary
             condenser_max_size: condenser_max_size setting
             secrets: Optional dictionary of secrets for authentication
+            custom_system_prompt_path: Optional absolute path (on the agent server)
+                to a custom system prompt for the default agent. When provided, it
+                overrides the default system prompt filename.
 
         Returns:
             Configured Agent instance with context
@@ -1346,13 +1424,20 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 mcp_config=mcp_config,
             )
         else:
-            agent = Agent(
+            default_agent_kwargs: dict[str, Any] = dict(
                 llm=llm,
                 tools=get_default_tools(enable_browser=True),
                 system_prompt_kwargs={'cli_mode': False},
                 condenser=condenser,
                 mcp_config=mcp_config,
             )
+            # Use the custom Build.One system prompt when it was successfully
+            # uploaded to the agent server; otherwise fall back to the default.
+            if custom_system_prompt_path:
+                default_agent_kwargs['system_prompt_filename'] = (
+                    custom_system_prompt_path
+                )
+            agent = Agent(**default_agent_kwargs)
 
         # Add agent context
         agent_context = AgentContext(
@@ -1563,6 +1648,15 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     mcp_server_names_needing_auth,
                 )
 
+        # Upload the custom Build.One system prompt to the agent server so the
+        # default agent renders it instead of the stock prompt. Only relevant for
+        # the default agent (the plan agent uses its own prompt).
+        custom_system_prompt_path: str | None = None
+        if agent_type != AgentType.PLAN:
+            custom_system_prompt_path = await self._resolve_custom_system_prompt_path(
+                remote_workspace
+            )
+
         # Create agent with context
         agent = self._create_agent_with_context(
             llm,
@@ -1571,6 +1665,7 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             mcp_config,
             user.condenser_max_size,
             secrets=secrets,
+            custom_system_prompt_path=custom_system_prompt_path,
         )
 
         # Finalize and return the conversation request
