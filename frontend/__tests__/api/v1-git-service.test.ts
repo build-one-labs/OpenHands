@@ -17,7 +17,10 @@ test("getGitChanges throws when response is not an array (dead runtime returns H
   ).rejects.toThrow("Invalid response from runtime");
 });
 
-test("getGitChanges passes the repo path as a `path` query parameter (agent-server v1.21)", async () => {
+// The repo/file path is sent as a trailing path SEGMENT (not a ?path= query)
+// so the request misses the exact V0 `/git/changes` route and falls through to
+// the http proxy, which converts it to the ?path= query agent-server v1.21 wants.
+test("getGitChanges sends the repo path as a trailing path segment (bypasses V0 route)", async () => {
   vi.mocked(axios.get).mockResolvedValue({ data: [] });
 
   await V1GitService.getGitChanges(
@@ -27,12 +30,12 @@ test("getGitChanges passes the repo path as a `path` query parameter (agent-serv
   );
 
   expect(axios.get).toHaveBeenCalledWith(
-    "http://localhost:3000/api/conversations/123/git/changes?path=%2Fworkspace%2Fproject",
+    "http://localhost:3000/api/conversations/123/git/changes/%2Fworkspace%2Fproject",
     expect.anything(),
   );
 });
 
-test("getGitChangeDiff passes the file path as a `path` query parameter (agent-server v1.21)", async () => {
+test("getGitChangeDiff sends the file path as a trailing path segment (bypasses V0 route)", async () => {
   vi.mocked(axios.get).mockResolvedValue({
     data: { modified: "", original: "" },
   });
@@ -44,7 +47,7 @@ test("getGitChangeDiff passes the file path as a `path` query parameter (agent-s
   );
 
   expect(axios.get).toHaveBeenCalledWith(
-    "http://localhost:3000/api/conversations/123/git/diff?path=%2Fworkspace%2Fproject%2Fsrc%2Fmain.py",
+    "http://localhost:3000/api/conversations/123/git/diff/%2Fworkspace%2Fproject%2Fsrc%2Fmain.py",
     expect.anything(),
   );
 });

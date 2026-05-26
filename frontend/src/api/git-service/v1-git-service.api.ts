@@ -15,8 +15,15 @@ interface V1GitChange {
 class V1GitService {
   /**
    * Get git changes for a V1 conversation
-   * Routes through the HTTP proxy: GET /api/conversations/{id}/git/changes?path={path}
-   * (agent-server v1.21 takes the repo path as a `path` query parameter)
+   * Routes through the HTTP proxy: GET /api/conversations/{id}/git/changes/{path}
+   *
+   * The repo path is sent as a trailing path SEGMENT on purpose: the legacy V0
+   * route is the exact path `/api/conversations/{id}/git/changes`, registered
+   * before the proxy catch-all, so a query-param form (`?path=`) would be
+   * intercepted by the V0 handler (which has no runtime for V1 conversations
+   * and 404s). The extra segment misses the V0 route and falls through to the
+   * http proxy, which translates it to the `?path=` query that agent-server
+   * v1.21 expects.
    * Maps V1 status types (ADDED, DELETED, etc.) to V0 format (A, D, etc.)
    */
   static async getGitChanges(
@@ -25,7 +32,7 @@ class V1GitService {
     path: string,
   ): Promise<GitChange[]> {
     const encodedPath = encodeURIComponent(path);
-    const url = `${conversationUrl}/git/changes?path=${encodedPath}`;
+    const url = `${conversationUrl}/git/changes/${encodedPath}`;
     const headers = buildSessionHeaders(sessionApiKey);
 
     // V1 API returns V1GitChangeStatus types, we need to map them to V0 format
@@ -47,8 +54,9 @@ class V1GitService {
 
   /**
    * Get git change diff for a specific file in a V1 conversation
-   * Routes through the HTTP proxy: GET /api/conversations/{id}/git/diff?path={path}
-   * (agent-server v1.21 takes the file path as a `path` query parameter)
+   * Routes through the HTTP proxy: GET /api/conversations/{id}/git/diff/{path}
+   * (sent as a path segment to bypass the V0 route; the proxy translates it to
+   * the `?path=` query that agent-server v1.21 expects — see getGitChanges)
    */
   static async getGitChangeDiff(
     conversationUrl: string | null | undefined,
@@ -56,7 +64,7 @@ class V1GitService {
     path: string,
   ): Promise<GitChangeDiff> {
     const encodedPath = encodeURIComponent(path);
-    const url = `${conversationUrl}/git/diff?path=${encodedPath}`;
+    const url = `${conversationUrl}/git/diff/${encodedPath}`;
     const headers = buildSessionHeaders(sessionApiKey);
 
     const { data } = await axios.get<GitChangeDiff>(url, { headers });
