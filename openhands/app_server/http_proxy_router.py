@@ -9,6 +9,7 @@ This complements ws_proxy_router.py which handles WebSocket connections.
 """
 
 import logging
+import urllib.parse
 from uuid import UUID
 
 import httpx
@@ -23,6 +24,47 @@ from openhands.app_server.sandbox.sandbox_service import SandboxService
 _logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Agent-server has two kinds of routes:
+#   - Conversation-scoped: /api/conversations/{id}/events, /pause, /run, etc.
+#   - Top-level: /api/git/*, /api/file/*, /api/vscode/*, etc.
+# For top-level routes, strip the conversation prefix when forwarding.
+_TOP_LEVEL_PREFIXES = (
+    'git/',
+    'file/',
+    'vscode/',
+    'desktop/',
+    'tools/',
+    'bash/',
+    'skills',
+)
+
+# Git routes whose trailing path segment must be converted to a `path` query
+# parameter for agent-server >=1.21 (see ``_translate_git_path``).
+_GIT_SEGMENT_PREFIXES = ('git/changes/', 'git/diff/')
+
+
+def _translate_git_path(path: str) -> tuple[str, str | None]:
+    """Convert a segment-style git path into the query form agent-server wants.
+
+    agent-server >=1.21 takes the git repo/file path as a ``path`` query
+    parameter (``GET /api/git/changes?path=...``) rather than a trailing path
+    segment. The frontend V1 git service addresses these as path segments
+    (``/git/changes/<encoded path>``) on purpose, so the request misses the
+    exact V0 ``/git/changes`` route and reaches this proxy instead of the V0
+    handler (which has no runtime for V1 conversations).
+
+    Returns ``(path, extra_query)`` where ``extra_query`` is ``None`` for any
+    non-git path (left untouched).
+    """
+    for git_prefix in _GIT_SEGMENT_PREFIXES:
+        if path.startswith(git_prefix):
+            # ``path`` is already percent-decoded by Starlette; unquote() is a
+            # no-op if it wasn't, so this is robust either way.
+            repo_path = urllib.parse.unquote(path[len(git_prefix) :])
+            base = git_prefix.rstrip('/')  # 'git/changes' | 'git/diff'
+            return base, urllib.parse.urlencode({'path': repo_path})
+    return path, None
 
 
 @router.api_route(
@@ -71,25 +113,16 @@ async def http_proxy(request: Request, conversation_id: str, path: str):
         )
 
     # Build upstream URL preserving the full path and query string.
-    # Agent-server has two kinds of routes:
-    #   - Conversation-scoped: /api/conversations/{id}/events, /pause, /run, etc.
-    #   - Top-level: /api/git/*, /api/file/*, /api/vscode/*, etc.
-    # For top-level routes, strip the conversation prefix when forwarding.
-    _TOP_LEVEL_PREFIXES = (
-        'git/',
-        'file/',
-        'vscode/',
-        'desktop/',
-        'tools/',
-        'bash/',
-        'skills',
-    )
+    path, extra_query = _translate_git_path(path)
     if path.startswith(_TOP_LEVEL_PREFIXES):
         upstream_url = f'{upstream_base_url}/api/{path}'
     else:
         upstream_url = f'{upstream_base_url}/api/conversations/{conversation_id}/{path}'
-    if request.url.query:
-        upstream_url = f'{upstream_url}?{request.url.query}'
+    query = request.url.query
+    if extra_query:
+        query = f'{extra_query}&{query}' if query else extra_query
+    if query:
+        upstream_url = f'{upstream_url}?{query}'
 
     # Forward the request
     body = await request.body()

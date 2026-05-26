@@ -5,9 +5,18 @@ import { EmptyChangesMessage } from "#/components/features/diff-viewer/empty-cha
 import { retrieveAxiosErrorMessage } from "#/utils/retrieve-axios-error-message";
 import { useUnifiedGetGitChanges } from "#/hooks/query/use-unified-get-git-changes";
 import { I18nKey } from "#/i18n/declaration";
-import { RUNTIME_INACTIVE_STATES } from "#/types/agent-state";
+import { AgentState, RUNTIME_INACTIVE_STATES } from "#/types/agent-state";
 import { RandomTip } from "#/components/features/tips/random-tip";
 import { useAgentState } from "#/hooks/use-agent-state";
+
+// States the agent settles into when it stops working (finished a turn or is
+// waiting on the user). When we transition into one of these from RUNNING, the
+// set of git changes may have grown, so we refetch.
+const AGENT_SETTLED_STATES = [
+  AgentState.AWAITING_USER_INPUT,
+  AgentState.AWAITING_USER_CONFIRMATION,
+  AgentState.FINISHED,
+];
 
 // Error message patterns
 const GIT_REPO_ERROR_PATTERN = /not a git repository/i;
@@ -28,6 +37,7 @@ function GitChanges() {
     isError,
     error,
     isLoading: loadingGitChanges,
+    refetch,
   } = useUnifiedGetGitChanges();
 
   const [statusMessage, setStatusMessage] = React.useState<string[] | null>(
@@ -36,6 +46,23 @@ function GitChanges() {
 
   const { curAgentState } = useAgentState();
   const runtimeIsActive = !RUNTIME_INACTIVE_STATES.includes(curAgentState);
+
+  // Per-action cache invalidation (cache-utils) only fires while the Changes
+  // tab is mounted and only for known file-mutating action kinds. As a robust
+  // safety net, refetch whenever the agent stops working — that way newly
+  // created files show up without having to reopen the conversation,
+  // regardless of how they were created (editor, shell, git, etc.).
+  const prevAgentStateRef = React.useRef(curAgentState);
+  React.useEffect(() => {
+    const prevState = prevAgentStateRef.current;
+    prevAgentStateRef.current = curAgentState;
+    if (
+      prevState === AgentState.RUNNING &&
+      AGENT_SETTLED_STATES.includes(curAgentState)
+    ) {
+      refetch();
+    }
+  }, [curAgentState, refetch]);
 
   const isNotGitRepoError =
     error && GIT_REPO_ERROR_PATTERN.test(retrieveAxiosErrorMessage(error));

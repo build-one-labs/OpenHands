@@ -36,8 +36,6 @@ from openhands.app_server.user.user_context import UserContext
 from openhands.sdk import Agent
 from openhands.sdk.context.agent_context import AgentContext
 from openhands.sdk.context.condenser import LLMSummarizingCondenser
-from openhands.sdk.context.skills import Skill
-from openhands.sdk.context.skills.trigger import KeywordTrigger, TaskTrigger
 from openhands.sdk.llm import LLM
 from openhands.sdk.security.analyzer import SecurityAnalyzerBase
 from openhands.sdk.security.confirmation_policy import (
@@ -47,6 +45,8 @@ from openhands.sdk.security.confirmation_policy import (
     NeverConfirm,
 )
 from openhands.sdk.security.llm_analyzer import LLMSecurityAnalyzer
+from openhands.sdk.skills import Skill
+from openhands.sdk.skills.trigger import KeywordTrigger, TaskTrigger
 from openhands.sdk.workspace.remote.async_remote_workspace import AsyncRemoteWorkspace
 
 _logger = logging.getLogger(__name__)

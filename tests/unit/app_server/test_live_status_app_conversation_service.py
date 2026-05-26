@@ -2046,3 +2046,97 @@ class TestLiveStatusAppConversationService:
         last_task = tasks[-1]
         assert last_task.status == AppConversationStartTaskStatus.ERROR
         self.mock_sandbox_service.delete_sandbox.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_resolve_custom_system_prompt_writes_and_returns_path(self):
+        """A successful write returns the remote prompt path and base64-decodes it."""
+        from openhands.app_server.app_conversation import (
+            live_status_app_conversation_service as mod,
+        )
+        from openhands.sdk.workspace import CommandResult
+
+        workspace = Mock(spec=AsyncRemoteWorkspace)
+        workspace.execute_command = AsyncMock(
+            return_value=CommandResult(
+                command='write prompt',
+                exit_code=0,
+                stdout='',
+                stderr='',
+                timeout_occurred=False,
+            )
+        )
+
+        result = await self.service._resolve_custom_system_prompt_path(workspace)
+
+        assert result == mod.CUSTOM_SYSTEM_PROMPT_DEST
+        workspace.execute_command.assert_awaited_once()
+        command = workspace.execute_command.await_args.args[0]
+        # The command must base64-decode into the destination path.
+        assert 'base64 -d' in command
+        assert mod.CUSTOM_SYSTEM_PROMPT_DEST in command
+
+    @pytest.mark.asyncio
+    async def test_resolve_custom_system_prompt_no_workspace_returns_none(self):
+        """Without a workspace there is nowhere to write, so fall back to default."""
+        result = await self.service._resolve_custom_system_prompt_path(None)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_custom_system_prompt_failed_write_returns_none(self):
+        """A non-zero exit code falls back to the default prompt (no crash)."""
+        from openhands.sdk.workspace import CommandResult
+
+        workspace = Mock(spec=AsyncRemoteWorkspace)
+        workspace.execute_command = AsyncMock(
+            return_value=CommandResult(
+                command='write prompt',
+                exit_code=1,
+                stdout='',
+                stderr='no space left on device',
+                timeout_occurred=False,
+            )
+        )
+
+        result = await self.service._resolve_custom_system_prompt_path(workspace)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_custom_system_prompt_write_exception_returns_none(self):
+        """An exception during write is swallowed and falls back to the default."""
+        workspace = Mock(spec=AsyncRemoteWorkspace)
+        workspace.execute_command = AsyncMock(side_effect=Exception('network down'))
+
+        result = await self.service._resolve_custom_system_prompt_path(workspace)
+        assert result is None
+
+    def test_create_agent_with_context_applies_custom_system_prompt(self):
+        """The default agent uses the custom prompt path when provided."""
+        from openhands.sdk.context.condenser import NoOpCondenser
+
+        condenser = NoOpCondenser()
+        with patch.object(self.service, '_create_condenser', return_value=condenser):
+            agent = self.service._create_agent_with_context(
+                llm=LLM(model='gpt-4', usage_id='agent'),
+                agent_type=AgentType.DEFAULT,
+                system_message_suffix=None,
+                mcp_config={},
+                condenser_max_size=None,
+                custom_system_prompt_path='/tmp/system_prompt_v1.j2',
+            )
+        assert agent.system_prompt_filename == '/tmp/system_prompt_v1.j2'
+
+    def test_create_agent_with_context_default_prompt_when_none(self):
+        """The default agent keeps the stock prompt when no custom path is given."""
+        from openhands.sdk.context.condenser import NoOpCondenser
+
+        condenser = NoOpCondenser()
+        with patch.object(self.service, '_create_condenser', return_value=condenser):
+            agent = self.service._create_agent_with_context(
+                llm=LLM(model='gpt-4', usage_id='agent'),
+                agent_type=AgentType.DEFAULT,
+                system_message_suffix=None,
+                mcp_config={},
+                condenser_max_size=None,
+                custom_system_prompt_path=None,
+            )
+        assert agent.system_prompt_filename == 'system_prompt.j2'
