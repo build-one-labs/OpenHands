@@ -21,10 +21,14 @@ export const handleActionEventCacheInvalidation = (
 ) => {
   const { action } = event;
 
-  // Invalidate file_changes cache for file-related actions
+  // Invalidate file_changes cache for file-related actions.
+  // Note: agent-server >=1.21 renamed the bash action to "TerminalAction"
+  // (was "ExecuteBashAction"); files created via the shell only invalidate the
+  // cache if we match the new name. The older names are kept for back-compat.
   if (
     action.kind === "StrReplaceEditorAction" ||
     action.kind === "FileEditorAction" ||
+    action.kind === "TerminalAction" ||
     action.kind === "ExecuteBashAction"
   ) {
     queryClient.invalidateQueries(
