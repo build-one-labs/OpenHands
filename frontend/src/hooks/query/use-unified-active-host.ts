@@ -14,7 +14,6 @@ function appendDefaultQueryParams(url: string): string {
     parsed.searchParams.set("mainLayoutScreen", "singleScreenLayout");
     parsed.searchParams.set("initialScreen", "chatPreviewInitialScreen");
     parsed.searchParams.set("colorScheme", "light");
-    parsed.searchParams.set("_mcp", "1");
     const previewApp = new URLSearchParams(window.location.search).get(
       "preview_app",
     );

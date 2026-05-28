@@ -99,6 +99,20 @@ class AuthService {
   }
 
   /**
+   * Mint a fresh single-use handoff code for an embedded child app (the
+   * served-app preview iframe). OpenHands forwards the user's session cookie
+   * to the auth server's issue endpoint. Returns null when no code is
+   * available (not configured / unauthenticated). Throws on network errors so
+   * callers can fall back to an unauthenticated iframe load.
+   */
+  static async issueHandoffCode(): Promise<string | null> {
+    const { data } = await openHands.post<{ code?: string }>(
+      "/api/auth/handoff/issue",
+    );
+    return data?.code ?? null;
+  }
+
+  /**
    * Logout user from the application
    * @param appMode The application mode (saas, oss, or b1)
    */

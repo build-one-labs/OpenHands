@@ -625,6 +625,73 @@ async def handoff_redeem(request: Request):
     return response
 
 
+@app.post('/auth/handoff/issue')
+async def handoff_issue(request: Request):
+    """Mint a fresh single-use handoff code for an embedded child app.
+
+    The served-app preview iframe lives on a different origin, so the user's
+    session cookie never reaches it and JS can't copy an httpOnly cookie
+    across. The app's only supported way to receive a session is its MCP SSO
+    hop (`/service/swat/mcp/sso?code=<code>&to=<screen>`), which exchanges a
+    fresh single-use code (~60s TTL) for a session cookie on the app's own
+    origin. That code must be minted by an already-authenticated caller.
+
+    OpenHands holds the user's session, so it acts as that caller: it forwards
+    the session cookie to the auth server's issue endpoint and returns the
+    resulting `{ "code": ... }` to the SPA. On any non-200 we pass the status
+    through so the client can fall back to loading the iframe unauthenticated.
+    """
+    if not BETTER_AUTH_URL:
+        return JSONResponse(
+            status_code=501,
+            content={'error': 'Better Auth is not configured'},
+        )
+
+    cookie_name, token = _get_session_token(request)
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={'error': 'Not authenticated'},
+        )
+
+    origin = _request_origin(request)
+    headers = _build_proxy_headers(origin)
+    headers['cookie'] = f'{cookie_name}={token}'
+    # Better Auth's CSRF check on the issue endpoint rejects requests without
+    # an Origin header (MISSING_OR_NULL_ORIGIN). Forward the SPA's origin (the
+    # same-origin XHR carries one) so the check passes.
+    if origin:
+        headers['origin'] = origin
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                _auth_url('/api/auth/mcp/handoff/issue'),
+                headers=headers,
+                timeout=10.0,
+            )
+    except Exception as e:
+        logger.warning('Handoff issue network error: %s', e)
+        return JSONResponse(
+            status_code=502,
+            content={'error': 'Auth service unavailable'},
+        )
+
+    try:
+        content = resp.json()
+    except Exception:
+        content = {'error': resp.text or 'Issue failed'}
+
+    if resp.status_code != 200:
+        logger.info(
+            'Handoff issue rejected (%s): %s',
+            resp.status_code,
+            resp.text[:200],
+        )
+
+    return JSONResponse(status_code=resp.status_code, content=content)
+
+
 @app.post('/login')
 async def login_deprecated():
     """Old password login endpoint — removed."""
