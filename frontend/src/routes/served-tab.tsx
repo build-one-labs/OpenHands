@@ -4,6 +4,7 @@ import { FaExternalLinkAlt, FaHome } from "react-icons/fa";
 import { useTranslation } from "react-i18next";
 import { useConversationId } from "#/hooks/use-conversation-id";
 import { useUnifiedActiveHost } from "#/hooks/query/use-unified-active-host";
+import { useMcpSsoUrl } from "#/hooks/query/use-mcp-sso-url";
 import { PathForm } from "#/components/features/served-host/path-form";
 import { I18nKey } from "#/i18n/declaration";
 import ServerProcessIcon from "#/icons/server-process.svg?react";
@@ -71,18 +72,8 @@ function ServedApp() {
     }
   }, [activeHost]);
 
-  if (!currentActiveHost) {
-    return (
-      <div className="flex flex-col items-center justify-center w-full h-full p-10">
-        <ServerProcessIcon width={113} height={113} color="#A1A1A1" />
-        <span className="text-[#8D95A9] text-[19px] font-normal leading-5">
-          {t(I18nKey.BROWSER$SERVER_MESSAGE)}
-        </span>
-      </div>
-    );
-  }
-
   const fullUrl = (() => {
+    if (!currentActiveHost) return null;
     try {
       const url = new URL(currentActiveHost);
       if (path) url.pathname = path;
@@ -93,7 +84,14 @@ function ServedApp() {
     }
   })();
 
+  // Route the iframe through the app's MCP SSO hop with a freshly-minted
+  // handoff code so it loads already authenticated (the app is cross-origin,
+  // so OpenHands' session cookie never reaches it). `undefined` while the
+  // code is being minted; falls back to `fullUrl` if no code can be obtained.
+  const iframeSrc = useMcpSsoUrl(fullUrl, refreshKey);
+
   const externalUrl = (() => {
+    if (!fullUrl) return "";
     try {
       const url = new URL(fullUrl);
       url.search = "";
@@ -102,6 +100,17 @@ function ServedApp() {
       return fullUrl;
     }
   })();
+
+  if (!currentActiveHost) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full h-full p-10">
+        <ServerProcessIcon width={113} height={113} color="#A1A1A1" />
+        <span className="text-[#8D95A9] text-[19px] font-normal leading-5">
+          {t(I18nKey.BROWSER$SERVER_MESSAGE)}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full flex flex-col">
@@ -141,7 +150,7 @@ function ServedApp() {
           <PathForm
             ref={formRef}
             onBlur={handleOnBlur}
-            defaultValue={fullUrl}
+            defaultValue={fullUrl ?? ""}
           />
         </div>
       </div>
@@ -151,7 +160,7 @@ function ServedApp() {
       <iframe
         key={refreshKey}
         title={t(I18nKey.SERVED_APP$TITLE)}
-        src={fullUrl}
+        src={iframeSrc}
         className="w-full h-full custom-scrollbar-always"
       />
     </div>
