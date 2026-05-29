@@ -126,6 +126,18 @@ CUSTOM_SYSTEM_PROMPT_SRC = os.path.join(
 )
 CUSTOM_SYSTEM_PROMPT_DEST = '/tmp/system_prompt_v1.j2'
 
+# Lean system prompt for the MCP-only Build.One blueprint agent (no file/bash/git
+# guidance). Uploaded and referenced by absolute path the same way as the default
+# custom prompt above.
+BLUEPRINT_SYSTEM_PROMPT_SRC = os.path.join(
+    _OPENHANDS_PACKAGE_DIR,
+    'agenthub',
+    'codeact_agent',
+    'prompts',
+    'system_prompt_blueprint.j2',
+)
+BLUEPRINT_SYSTEM_PROMPT_DEST = '/tmp/system_prompt_blueprint.j2'
+
 
 def _truncated_initial_message_title(
     msg: SendMessageRequest | None, max_length: int = 50
@@ -1360,15 +1372,21 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         return llm, mcp_config
 
     async def _resolve_custom_system_prompt_path(
-        self, remote_workspace: AsyncRemoteWorkspace | None
+        self,
+        remote_workspace: AsyncRemoteWorkspace | None,
+        src: str = CUSTOM_SYSTEM_PROMPT_SRC,
+        dest: str = CUSTOM_SYSTEM_PROMPT_DEST,
     ) -> str | None:
-        """Write the Build.One system prompt to the agent server and return its path.
+        """Write a Build.One system prompt to the agent server and return its path.
 
         The agent server renders ``system_prompt_filename`` from its own filesystem
         when the conversation starts, so the prompt must exist there. We write it
         via the workspace command API rather than relying on a volume mount, so it
         is present regardless of how the sandbox/agent server is provisioned (local
         sandbox, remote environment connection, etc.).
+
+        ``src`` selects which prompt to upload (the default Build.One prompt, or the
+        lean blueprint prompt) and ``dest`` is its absolute path on the agent server.
 
         The file content is base64-encoded and decoded on the agent server. This
         avoids both shell-escaping issues with the template's Jinja2/quote syntax
@@ -1380,20 +1398,18 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         """
         if remote_workspace is None:
             return None
-        if not os.path.exists(CUSTOM_SYSTEM_PROMPT_SRC):
+        if not os.path.exists(src):
             _logger.warning(
                 'Custom system prompt not found at %s; using default prompt',
-                CUSTOM_SYSTEM_PROMPT_SRC,
+                src,
             )
             return None
         try:
-            with open(CUSTOM_SYSTEM_PROMPT_SRC, 'rb') as f:
+            with open(src, 'rb') as f:
                 encoded = base64.b64encode(f.read()).decode('ascii')
             # base64 output only contains [A-Za-z0-9+/=], so it is safe to embed
             # inside single quotes in the shell command.
-            command = (
-                f"printf '%s' '{encoded}' | base64 -d > {CUSTOM_SYSTEM_PROMPT_DEST}"
-            )
+            command = f"printf '%s' '{encoded}' | base64 -d > {dest}"
             result = await remote_workspace.execute_command(command)
             if result.exit_code != 0:
                 _logger.warning(
@@ -1405,9 +1421,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 return None
             _logger.info(
                 'Wrote custom system prompt to agent server at %s',
-                CUSTOM_SYSTEM_PROMPT_DEST,
+                dest,
             )
-            return CUSTOM_SYSTEM_PROMPT_DEST
+            return dest
         except Exception:
             _logger.warning(
                 'Error writing custom system prompt; using default prompt',
@@ -1455,6 +1471,27 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 security_analyzer=None,
                 mcp_config=mcp_config,
             )
+        elif agent_type == AgentType.BLUEPRINT:
+            # MCP-only Build.One blueprint agent: it builds apps purely through
+            # the B1 MCP tools, so it needs no browser. Disabling the browser
+            # removes the large browser tool schema from every request and keeps
+            # browser DOM/screenshot observations out of the replayed history
+            # (the dominant cost on blueprint tasks). It also uses a lean system
+            # prompt with no file/bash/git guidance.
+            blueprint_agent_kwargs: dict[str, Any] = dict(
+                llm=llm,
+                tools=get_default_tools(enable_browser=False),
+                system_prompt_kwargs={'cli_mode': False},
+                condenser=condenser,
+                mcp_config=mcp_config,
+            )
+            # Lean blueprint prompt is uploaded to the agent server and referenced
+            # by absolute path (same mechanism as the default custom prompt).
+            if custom_system_prompt_path:
+                blueprint_agent_kwargs['system_prompt_filename'] = (
+                    custom_system_prompt_path
+                )
+            agent = Agent(**blueprint_agent_kwargs)
         else:
             default_agent_kwargs: dict[str, Any] = dict(
                 llm=llm,
@@ -1684,9 +1721,15 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         # default agent renders it instead of the stock prompt. Only relevant for
         # the default agent (the plan agent uses its own prompt).
         custom_system_prompt_path: str | None = None
-        if agent_type != AgentType.PLAN:
+        if agent_type == AgentType.DEFAULT:
             custom_system_prompt_path = await self._resolve_custom_system_prompt_path(
                 remote_workspace
+            )
+        elif agent_type == AgentType.BLUEPRINT:
+            custom_system_prompt_path = await self._resolve_custom_system_prompt_path(
+                remote_workspace,
+                BLUEPRINT_SYSTEM_PROMPT_SRC,
+                BLUEPRINT_SYSTEM_PROMPT_DEST,
             )
 
         # Create agent with context

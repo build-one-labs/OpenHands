@@ -22,6 +22,7 @@ class AgentType(Enum):
 
     DEFAULT = 'default'
     PLAN = 'plan'
+    BLUEPRINT = 'blueprint'  # MCP-only Build.One agent: no browser, lean system prompt
 
 
 class AppConversationInfo(BaseModel):
