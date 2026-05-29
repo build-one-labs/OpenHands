@@ -209,7 +209,11 @@ async def start_app_conversation(
     # so the background task needs its own context that stays alive.
     state = InjectorState()
     setattr(state, USER_CONTEXT_ATTR, user_context)
-    app_conversation_service_ctx = get_app_conversation_service(state)
+    # Pass the request so the service can capture the user's session cookie/token
+    # at injection time (read synchronously before the request scope ends). It is
+    # forwarded to internal MCP servers and to the agent (as B1_APP_TOKEN) so the
+    # agent can call the previewed app's API as the end user.
+    app_conversation_service_ctx = get_app_conversation_service(state, request)
     app_conversation_service = await app_conversation_service_ctx.__aenter__()
 
     try:

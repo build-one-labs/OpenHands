@@ -377,6 +377,49 @@ class TestLiveStatusAppConversationService:
         assert result['MY_SECRET'].description == ''
 
     @pytest.mark.asyncio
+    async def test_get_secrets_env_vars_injects_token_always_and_url_for_env(self):
+        """B1_APP_TOKEN is always injected; B1_APP_URL only for environments."""
+        # Arrange
+        self.mock_user_context.get_secrets.return_value = {}
+        self.service.session_token = 'session-token-123'
+
+        # Act
+        result = await self.service._get_secrets_env_vars('https://app.example.com/')
+
+        # Assert (trailing slash stripped from the URL)
+        assert result is not None
+        assert result['B1_APP_TOKEN'] == 'session-token-123'
+        assert result['B1_APP_URL'] == 'https://app.example.com'
+
+    @pytest.mark.asyncio
+    async def test_get_secrets_env_vars_token_without_environment(self):
+        """B1_APP_TOKEN is injected even without an environment; no B1_APP_URL."""
+        # Arrange
+        self.mock_user_context.get_secrets.return_value = {}
+        self.service.session_token = 'session-token-123'
+
+        # Act
+        result = await self.service._get_secrets_env_vars(None)
+
+        # Assert
+        assert result is not None
+        assert result['B1_APP_TOKEN'] == 'session-token-123'
+        assert 'B1_APP_URL' not in result
+
+    @pytest.mark.asyncio
+    async def test_get_secrets_env_vars_omits_app_vars_without_session(self):
+        """No app vars when the user's session token is unavailable."""
+        # Arrange
+        self.mock_user_context.get_secrets.return_value = {}
+        self.service.session_token = None
+
+        # Act
+        result = await self.service._get_secrets_env_vars(None)
+
+        # Assert
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_configure_llm_and_mcp_with_custom_model(self):
         """Test _configure_llm_and_mcp with custom LLM model."""
         # Arrange
