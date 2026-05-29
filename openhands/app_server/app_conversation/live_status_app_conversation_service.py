@@ -103,6 +103,12 @@ _logger = logging.getLogger(__name__)
 # Sentinel for detecting StopIteration from thread pool executor
 _GENERATOR_STOP = object()
 
+# Better Auth session cookie names, in priority order. Mirrors
+# ``_SESSION_COOKIES`` in ``openhands/server/routes/auth.py`` — keep in sync.
+# The value of the first matching cookie is the user's per-user session token,
+# which is forwarded to the agent so it can call the previewed app's API.
+_SESSION_COOKIE_NAMES = ('__Secure-b1.session_token', 'b1.session_token')
+
 # Custom Build.One system prompt for the default agent. The agent server renders
 # ``system_prompt_filename`` from its OWN filesystem when a conversation starts,
 # so the prompt file must be present there. Rather than depend on a SANDBOX_VOLUMES
@@ -199,6 +205,10 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
     app_mode: str | None = None
     tavily_api_key: str | None = None
     session_cookie: str | None = None
+    # The user's Better Auth session token (value of the session cookie),
+    # forwarded into the sandbox as B1_APP_TOKEN so the agent can call the
+    # previewed app's API as the end user.
+    session_token: str | None = None
 
     async def search_app_conversations(
         self,
@@ -307,8 +317,13 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         yield task
 
         try:
-            # Fetch user secrets as env vars for the sandbox container
-            secrets_env = await self._get_secrets_env_vars()
+            # Fetch user secrets as env vars for the sandbox container. This also
+            # injects B1_APP_TOKEN (the user's session token) and, for environment
+            # connections, B1_APP_URL (the previewed app's base URL) so the agent
+            # can make authenticated HTTP calls to the previewed app as the end
+            # user. Agent-facing guidance lives in the custom system prompt
+            # template (system_prompt_v1.j2).
+            secrets_env = await self._get_secrets_env_vars(request.environment_url)
 
             async for updated_task in self._wait_for_sandbox_start(
                 task, extra_env=secrets_env
@@ -957,12 +972,20 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         if not request.llm_model and parent_info.llm_model:
             request.llm_model = parent_info.llm_model
 
-    async def _get_secrets_env_vars(self) -> dict[str, str] | None:
+    async def _get_secrets_env_vars(
+        self, environment_url: str | None = None
+    ) -> dict[str, str] | None:
         """Collect user secrets as plain env-var key/value pairs.
 
         Returns a dict suitable for injecting into the sandbox container
         environment, or ``None`` if there are no secrets.  Also resolves
         ``GITHUB_USER`` from the GitHub token when available.
+
+        Injects ``B1_APP_TOKEN`` (the user's session token) whenever a session
+        was captured, so the agent can make authenticated HTTP calls as the end
+        user. When ``environment_url`` is set (an environment connection), also
+        injects ``B1_APP_URL`` — the base URL of the app shown in the preview,
+        which is what the agent should call.
         """
         env: dict[str, str] = {}
 
@@ -983,6 +1006,15 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 github_user = await self._resolve_github_user(env)
                 if github_user:
                     env['GITHUB_USER'] = github_user
+
+        # Give the agent authenticated access to the previewed app's API as the
+        # end user. B1_APP_TOKEN (the user's bearer credential) is provided
+        # whenever we captured the session; B1_APP_URL (the previewed app's base
+        # URL) is provided for environment connections.
+        if self.session_token:
+            env['B1_APP_TOKEN'] = self.session_token
+        if environment_url:
+            env['B1_APP_URL'] = environment_url.rstrip('/')
 
         return env or None
 
@@ -2035,8 +2067,17 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
             # be forwarded to internal MCP servers (needed for auth when MCP
             # tools call back into the app-server API).
             session_cookie: str | None = None
+            # Also capture the parsed per-user session token so it can be
+            # forwarded to the agent (as B1_APP_TOKEN) to call the previewed
+            # app's API as the end user.
+            session_token: str | None = None
             if request is not None:
                 session_cookie = request.headers.get('cookie')
+                for cookie_name in _SESSION_COOKIE_NAMES:
+                    token = request.cookies.get(cookie_name)
+                    if token:
+                        session_token = token
+                        break
 
             yield LiveStatusAppConversationService(
                 init_git_in_empty_workspace=self.init_git_in_empty_workspace,
@@ -2057,4 +2098,5 @@ class LiveStatusAppConversationServiceInjector(AppConversationServiceInjector):
                 app_mode=app_mode,
                 tavily_api_key=tavily_api_key,
                 session_cookie=session_cookie,
+                session_token=session_token,
             )
