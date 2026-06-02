@@ -8,6 +8,6 @@ docker compose -f docker-compose.dev.yml build
 
 # Pre-pull the agent-server sandbox image so the first conversation starts instantly
 _repo="${AGENT_SERVER_IMAGE_REPOSITORY:-ghcr.io/openhands/agent-server}"
-_tag="${AGENT_SERVER_IMAGE_TAG:-31536c8-python}"
+_tag="${AGENT_SERVER_IMAGE_TAG:-b5042ef-python}"
 echo "Pre-pulling sandbox image: ${_repo}:${_tag}"
 docker pull "${_repo}:${_tag}" || echo "Warning: failed to pre-pull sandbox image (non-fatal)"
