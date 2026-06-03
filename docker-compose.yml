@@ -11,7 +11,7 @@ services:
       - CODESPACE_NAME=${CODESPACE_NAME:-}
       - GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN=${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}
       - AGENT_SERVER_IMAGE_REPOSITORY=${AGENT_SERVER_IMAGE_REPOSITORY:-ghcr.io/openhands/agent-server}
-      - AGENT_SERVER_IMAGE_TAG=${AGENT_SERVER_IMAGE_TAG:-4110929-python}
+      - AGENT_SERVER_IMAGE_TAG=${AGENT_SERVER_IMAGE_TAG:-b5042ef-python}
       #- SANDBOX_USER_ID=${SANDBOX_USER_ID:-1234} # enable this only if you want a specific non-root sandbox user but you will have to manually adjust permissions of ~/.openhands for this user
       - WORKSPACE_MOUNT_PATH=${WORKSPACE_BASE:-$PWD/workspace}
       - OH_SANDBOX__RESOURCE_PREFIX=${OH_SANDBOX__RESOURCE_PREFIX:-openhands}
