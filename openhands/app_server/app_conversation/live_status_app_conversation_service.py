@@ -1472,12 +1472,14 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 mcp_config=mcp_config,
             )
         elif agent_type == AgentType.BLUEPRINT:
-            # MCP-only Build.One blueprint agent: it builds apps purely through
-            # the B1 MCP tools, so it needs no browser. Disabling the browser
-            # removes the large browser tool schema from every request and keeps
-            # browser DOM/screenshot observations out of the replayed history
-            # (the dominant cost on blueprint tasks). It also uses a lean system
-            # prompt with no file/bash/git guidance.
+            # Build.One blueprint agent: it builds apps primarily through the B1
+            # MCP tools, with shell/file-editor access for supporting tasks, but
+            # no browser. Disabling the browser removes the large browser tool
+            # schema from every request and keeps browser DOM/screenshot
+            # observations out of the replayed history (the dominant cost on
+            # blueprint tasks). It can still reach the previewed app over HTTP via
+            # the B1_APP_URL/B1_APP_TOKEN env vars. It uses a lean system prompt
+            # tailored to Build.One app-building rather than generic coding.
             blueprint_agent_kwargs: dict[str, Any] = dict(
                 llm=llm,
                 tools=get_default_tools(enable_browser=False),
