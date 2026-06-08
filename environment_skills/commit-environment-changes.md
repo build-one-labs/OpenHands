@@ -1,7 +1,7 @@
 ---
 name: commit-environment-changes
 type: knowledge
-version: 1.0.0
+version: 1.1.0
 agent: CodeActAgent
 triggers:
 - commit environment changes
@@ -37,6 +37,10 @@ It relies on two `B1_Blueprint` MCP tools:
 | --- | --- |
 | `mcp__B1_Blueprint__get_application_info` | Fetch the linked repository identifier |
 | `mcp__B1_Blueprint__export_modified_zip` | Export modified blueprint objects as a zip |
+
+> ⚠️ Do **not** use `mcp__B1_Blueprint__export_objects` in this workflow. It
+> writes to the appserver and clears the "modified" flag, breaking
+> `export_modified_zip`. See the warning in Step 3.
 
 ## Prerequisites
 
@@ -103,6 +107,17 @@ configured against the linked repo — the new branch in Step 5 is created from
 it. `gh`/`git` authenticate with the `$GH_TOKEN` resolved in Step 0.
 
 ### Step 3 — Export modified blueprint objects
+
+> ⚠️ **Use `export_modified_zip` — never `export_objects` first.**
+> There is a second, similarly named tool, `mcp__B1_Blueprint__export_objects`
+> (`action: "export"`), that looks like the right thing to reach for. It is
+> **not.** It writes JSON to the *appserver's* filesystem and **clears the
+> "modified" flag** on the objects as a side effect. If you call it before
+> `export_modified_zip`, the export then returns `fileCount: 0` because the
+> modified state is already gone — and you cannot get it back without re-editing
+> the objects. `export_modified_zip` is read-only with respect to that flag, so
+> reach for it directly and **do not call `export_objects` anywhere in this
+> workflow.**
 
 Call `mcp__B1_Blueprint__export_modified_zip`. The result has two parts:
 
@@ -199,6 +214,10 @@ PRs and wastes calls. Report the resulting PR URL to the user.
 
 - Never commit straight to the default branch — always use the new branch from
   Step 4 so changes go through review.
+- **`export_objects` is a trap, not a step.** It is a separate MCP tool that
+  writes to the appserver and clears the "modified" flag; calling it before
+  `export_modified_zip` makes the export return `fileCount: 0` and the change is
+  effectively lost. Never call it in this workflow — use `export_modified_zip`.
 - `export_modified_zip` also writes the JSON files into the running appserver's
   local `APP_DATA_FOLDER`, but that folder is on the appserver container, not the
   sandbox. The base64 blob in the tool result is the only sandbox-side source —
@@ -215,5 +234,6 @@ PRs and wastes calls. Report the resulting PR URL to the user.
 | --- | --- |
 | `get_application_info` tool | `src/swat-app-server-ts/src/mcp/tools/application.tools.ts` |
 | `export_modified_zip` tool | `src/swat-app-server-ts/src/mcp/tools/repository.tools.ts` (`exportModifiedBlueprintObjectsAsZip`) |
+| `export_objects` tool (avoid — clears modified flag) | `src/swat-app-server-ts/src/mcp/tools/repository.tools.ts` |
 | Tool registration | `src/swat-app-server-ts/src/mcp/mcp-server.factory.ts` |
 | Linked repository env var | `REPOSITORY` (set per environment in `.build/deploy/*.deployment.config.json`) |
