@@ -138,8 +138,12 @@ class AppConversationStartRequest(OpenHandsModel):
     # Inline skills to load into the conversation
     skills: list[SkillInput] | None = None
 
-    # MCP server configurations to merge into the conversation
+    # MCP server configurations for the conversation.
     # Format: {'server-name': {'url': '...', 'transport': 'http'}, ...}
+    # When provided, these REPLACE the hardcoded environment MCP servers
+    # (environment-blueprint / environment-knowledge); system servers (default,
+    # tavily) and user-custom servers are kept. The {environment_url} placeholder
+    # is supported in string values and resolved at startup.
     mcp_servers: dict[str, dict] | None = None
 
     @field_validator('environment_url')

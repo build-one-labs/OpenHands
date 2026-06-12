@@ -1667,8 +1667,10 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         This method orchestrates the creation of a conversation request by:
         1. Setting up git provider secrets
         2. Configuring LLM and MCP settings
-        3. Optionally adding a remote environment as an MCP server
-        4. Merging API-provided MCP servers
+        3. Optionally adding remote environment MCP servers (blueprint +
+           knowledge) as defaults when no API-provided servers are given
+        4. Applying API-provided MCP servers, which replace the hardcoded
+           environment servers when present
         5. Creating an agent with appropriate context
         6. Finalizing the request with skills and experiment variants
         """
@@ -1684,9 +1686,12 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             user, llm_model, conversation_id_hex
         )
 
-        # Add remote environment as MCP server if provided
+        # Add remote environment as MCP server if provided.
+        # The hardcoded environment servers (blueprint + knowledge) are only used
+        # as defaults: when the API caller provides its own mcp_servers, those
+        # replace the hardcoded environment servers entirely (see below).
         mcp_server_names_needing_auth: list[str] = []
-        if environment_url:
+        if environment_url and not api_mcp_servers:
             mcp_servers = mcp_config.get('mcpServers', {})
             self._add_environment_mcp_server(mcp_servers, environment_url)
             mcp_server_names_needing_auth.extend(
@@ -1694,7 +1699,9 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             )
             mcp_config['mcpServers'] = mcp_servers
 
-        # Merge API-provided MCP servers (highest precedence)
+        # Apply API-provided MCP servers. When provided, these replace the
+        # hardcoded environment MCP servers above (blueprint + knowledge), while
+        # leaving system servers (default, tavily) and user-custom servers intact.
         if api_mcp_servers:
             api_mcp_servers = self._resolve_mcp_placeholders(
                 api_mcp_servers, environment_url, sandbox
