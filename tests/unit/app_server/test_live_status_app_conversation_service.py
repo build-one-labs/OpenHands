@@ -1138,6 +1138,95 @@ class TestLiveStatusAppConversationService:
         self.service._finalize_conversation_request.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_api_mcp_servers_replace_hardcoded_environment_servers(self):
+        """API-provided MCP servers replace the hardcoded environment servers.
+
+        When the API caller supplies mcp_servers together with an environment_url,
+        the hardcoded ``environment-blueprint`` / ``environment-knowledge`` servers
+        must NOT be added; the API servers replace them. System servers (default,
+        tavily) and user-custom servers are left intact.
+        """
+        # Arrange
+        self.mock_user_context.get_user_info.return_value = self.mock_user
+
+        base_mcp_config = {'mcpServers': {'default': {'url': 'test'}}}
+        self.service._setup_secrets_for_git_providers = AsyncMock(return_value={})
+        self.service._configure_llm_and_mcp = AsyncMock(
+            return_value=(Mock(spec=LLM), base_mcp_config)
+        )
+        self.service._create_agent_with_context = Mock(return_value=Mock(spec=Agent))
+        self.service._finalize_conversation_request = AsyncMock(
+            return_value=Mock(spec=StartConversationRequest)
+        )
+        self.service._fetch_mcp_auth_token = AsyncMock(return_value=None)
+
+        api_mcp_servers = {
+            'my-api-server': {
+                'url': '{environment_url}/custom/mcp',
+                'transport': 'http',
+            }
+        }
+
+        # Act
+        await self.service._build_start_conversation_request_for_user(
+            sandbox=self.mock_sandbox,
+            initial_message=None,
+            system_message_suffix=None,
+            git_provider=None,
+            working_dir='/test/dir',
+            environment_url='https://env.example.com',
+            api_mcp_servers=api_mcp_servers,
+        )
+
+        # Assert: the mcp_config handed to the agent has API servers, no hardcoded
+        # environment servers, and still carries the system 'default' server.
+        mcp_config = self.service._create_agent_with_context.call_args.args[3]
+        mcp_servers = mcp_config['mcpServers']
+        assert 'environment-blueprint' not in mcp_servers
+        assert 'environment-knowledge' not in mcp_servers
+        assert 'default' in mcp_servers
+        assert 'my-api-server' in mcp_servers
+        # Placeholder was resolved against the environment URL.
+        assert (
+            mcp_servers['my-api-server']['url'] == 'https://env.example.com/custom/mcp'
+        )
+
+    @pytest.mark.asyncio
+    async def test_environment_servers_used_as_default_without_api_mcp_servers(self):
+        """Without API-provided servers, the hardcoded environment servers are used."""
+        # Arrange
+        self.mock_user_context.get_user_info.return_value = self.mock_user
+
+        base_mcp_config = {'mcpServers': {'default': {'url': 'test'}}}
+        self.service._setup_secrets_for_git_providers = AsyncMock(return_value={})
+        self.service._configure_llm_and_mcp = AsyncMock(
+            return_value=(Mock(spec=LLM), base_mcp_config)
+        )
+        self.service._create_agent_with_context = Mock(return_value=Mock(spec=Agent))
+        self.service._finalize_conversation_request = AsyncMock(
+            return_value=Mock(spec=StartConversationRequest)
+        )
+        self.service._fetch_mcp_auth_token = AsyncMock(return_value=None)
+
+        # Act
+        await self.service._build_start_conversation_request_for_user(
+            sandbox=self.mock_sandbox,
+            initial_message=None,
+            system_message_suffix=None,
+            git_provider=None,
+            working_dir='/test/dir',
+            environment_url='https://env.example.com',
+            api_mcp_servers=None,
+        )
+
+        # Assert
+        mcp_config = self.service._create_agent_with_context.call_args.args[3]
+        mcp_servers = mcp_config['mcpServers']
+        assert 'environment-blueprint' in mcp_servers
+        assert 'environment-knowledge' in mcp_servers
+        assert 'default' in mcp_servers
+
+    @pytest.mark.asyncio
     async def test_export_conversation_success(self):
         """Test successful download of conversation trajectory."""
         # Arrange
