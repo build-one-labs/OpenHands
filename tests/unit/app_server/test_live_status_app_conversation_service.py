@@ -50,6 +50,10 @@ class TestLiveStatusAppConversationService:
         self.mock_user_context = Mock(spec=UserContext)
         self.mock_user_auth = Mock()
         self.mock_user_context.user_auth = self.mock_user_auth
+        # Default: no stored custom secrets. Provider-matched LLM key resolution
+        # then falls back to the user's default key. Tests that exercise
+        # provider matching override this with their own secret dict.
+        self.mock_user_context.get_secrets = AsyncMock(return_value={})
         self.mock_jwt_service = Mock()
         self.mock_sandbox_service = Mock()
         self.mock_sandbox_spec_service = Mock()
@@ -2272,3 +2276,93 @@ class TestLiveStatusAppConversationService:
                 custom_system_prompt_path=None,
             )
         assert agent.system_prompt_filename == 'system_prompt.j2'
+
+    # --- Provider-matched LLM API key resolution -------------------------------
+    # Regression for the case where a conversation overrides the model with a
+    # different-provider model than the user's default. The default key is
+    # resolved from the default model, so without re-pairing it gets sent to the
+    # wrong provider (e.g. an Anthropic 'sk-ant-...' key -> OpenAI -> 401).
+
+    @pytest.mark.asyncio
+    async def test_resolve_provider_api_key_openai_override_picks_openai_key(self):
+        """Default model is Anthropic, but the conversation uses an OpenAI model:
+        the OpenAI custom secret must be selected, not the default key."""
+        self.mock_user.llm_model = 'anthropic/claude-opus-4-6'
+        self.mock_user.llm_api_key = SecretStr('sk-ant-default')
+        self.mock_user_context.get_secrets = AsyncMock(
+            return_value={
+                'openai-api-key': StaticSecret(value=SecretStr('sk-openai-stored')),
+                'anthropic-api-key': StaticSecret(value=SecretStr('sk-ant-stored')),
+            }
+        )
+
+        key = await self.service._resolve_provider_api_key(
+            'openai/gpt-5.5', self.mock_user
+        )
+
+        assert key.get_secret_value() == 'sk-openai-stored'
+
+    @pytest.mark.asyncio
+    async def test_resolve_provider_api_key_anthropic_model_picks_anthropic_key(self):
+        self.mock_user.llm_api_key = SecretStr('sk-default')
+        self.mock_user_context.get_secrets = AsyncMock(
+            return_value={
+                'openai-api-key': StaticSecret(value=SecretStr('sk-openai-stored')),
+                'anthropic-api-key': StaticSecret(value=SecretStr('sk-ant-stored')),
+            }
+        )
+
+        key = await self.service._resolve_provider_api_key(
+            'anthropic/claude-opus-4-6', self.mock_user
+        )
+
+        assert key.get_secret_value() == 'sk-ant-stored'
+
+    @pytest.mark.asyncio
+    async def test_resolve_provider_api_key_falls_back_when_secret_missing(self):
+        """No provider-specific secret stored -> keep the user's default key."""
+        self.mock_user.llm_api_key = SecretStr('sk-default')
+        self.mock_user_context.get_secrets = AsyncMock(return_value={})
+
+        key = await self.service._resolve_provider_api_key(
+            'openai/gpt-5.5', self.mock_user
+        )
+
+        assert key.get_secret_value() == 'sk-default'
+
+    @pytest.mark.asyncio
+    async def test_resolve_provider_api_key_unresolvable_model_uses_default(self):
+        """A model litellm cannot map to a provider -> keep the default key
+        without touching the secret store."""
+        self.mock_user.llm_api_key = SecretStr('sk-default')
+        self.mock_user_context.get_secrets = AsyncMock(return_value={})
+
+        key = await self.service._resolve_provider_api_key(
+            'some-custom-deployment', self.mock_user
+        )
+
+        assert key.get_secret_value() == 'sk-default'
+        self.mock_user_context.get_secrets.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_configure_llm_and_mcp_pairs_override_model_with_matching_key(self):
+        """End-to-end: a per-conversation OpenAI model is paired with the stored
+        OpenAI key rather than the Anthropic default."""
+        self.mock_user.llm_model = 'anthropic/claude-opus-4-6'
+        self.mock_user.llm_api_key = SecretStr('sk-ant-default')
+        self.mock_user.llm_base_url = None
+        self.mock_user_context.get_secrets = AsyncMock(
+            return_value={
+                'openai-api-key': StaticSecret(value=SecretStr('sk-openai-stored')),
+            }
+        )
+
+        with patch.object(
+            self.service, '_add_system_mcp_servers', new=AsyncMock(return_value=None)
+        ):
+            llm, _ = await self.service._configure_llm_and_mcp(
+                self.mock_user, 'openai/gpt-5.5'
+            )
+
+        assert llm.model == 'openai/gpt-5.5'
+        assert llm.api_key.get_secret_value() == 'sk-openai-stored'

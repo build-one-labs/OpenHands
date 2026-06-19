@@ -13,6 +13,7 @@ from typing import Any, AsyncGenerator, Sequence
 from uuid import UUID, uuid4
 
 import httpx
+import litellm
 from fastapi import Request
 from pydantic import Field, SecretStr, TypeAdapter
 
@@ -89,6 +90,10 @@ from openhands.sdk.secret import LookupSecret, SecretValue, StaticSecret
 from openhands.sdk.utils.paging import page_iterator
 from openhands.sdk.workspace.remote.async_remote_workspace import AsyncRemoteWorkspace
 from openhands.server.types import AppMode
+from openhands.storage.data_models.secrets import (
+    WELL_KNOWN_SECRET_LLM_API_KEY,
+    WELL_KNOWN_SECRET_OPENAI_API_KEY,
+)
 from openhands.tools.preset.default import (
     get_default_tools,
 )
@@ -1107,12 +1112,19 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
 
         return secrets
 
-    def _configure_llm(self, user: UserInfo, llm_model: str | None) -> LLM:
+    def _configure_llm(
+        self,
+        user: UserInfo,
+        llm_model: str | None,
+        api_key: SecretStr | None = None,
+    ) -> LLM:
         """Configure LLM settings.
 
         Args:
             user: User information containing LLM preferences
             llm_model: Optional specific model to use, falls back to user default
+            api_key: Optional API key matching the effective model's provider.
+                Falls back to the user's default key when not provided.
 
         Returns:
             Configured LLM instance
@@ -1139,10 +1151,42 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         return LLM(
             model=model,
             base_url=base_url,
-            api_key=user.llm_api_key,
+            api_key=api_key or user.llm_api_key,
             usage_id='agent',
             top_p=None if _needs_top_p_suppressed else 1.0,
         )
+
+    async def _resolve_provider_api_key(
+        self, model: str | None, user: UserInfo
+    ) -> SecretStr | None:
+        """Pick the stored API key whose provider matches ``model``.
+
+        ``user.llm_api_key`` is resolved from the user's *default* model. When a
+        conversation overrides the model with a different provider, that key no
+        longer matches (e.g. an Anthropic ``sk-ant-...`` key sent to OpenAI ->
+        401). Here the conversation's actual model is known, so re-pick the
+        provider-specific custom secret. Falls back to the default key when no
+        provider-specific secret is stored.
+        """
+        try:
+            _, provider, _, _ = litellm.get_llm_provider(model)
+        except Exception:
+            return user.llm_api_key
+
+        secret_name = None
+        if provider == 'openai':
+            secret_name = WELL_KNOWN_SECRET_OPENAI_API_KEY
+        elif provider == 'anthropic':
+            secret_name = WELL_KNOWN_SECRET_LLM_API_KEY
+        if not secret_name:
+            return user.llm_api_key
+
+        secrets = await self.user_context.get_secrets()
+        secret = secrets.get(secret_name)
+        if secret is None:
+            return user.llm_api_key
+        raw = secret.get_value()
+        return raw if isinstance(raw, SecretStr) else SecretStr(raw)
 
     async def _get_tavily_api_key(self, user: UserInfo) -> str | None:
         """Get Tavily search API key, prioritizing user's key over service key.
@@ -1353,8 +1397,14 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         Returns:
             Tuple of (configured LLM instance, MCP config dictionary)
         """
-        # Configure LLM
-        llm = self._configure_llm(user, llm_model)
+        # Configure LLM. Resolve the API key against the *effective* model's
+        # provider so a per-conversation model override (e.g. an OpenAI model
+        # when the user default is Anthropic) is paired with the matching key
+        # rather than the default key, which would 401 on the wrong provider.
+        api_key = await self._resolve_provider_api_key(
+            llm_model or user.llm_model, user
+        )
+        llm = self._configure_llm(user, llm_model, api_key)
 
         # Configure MCP - SDK expects format: {'mcpServers': {'server_name': {...}}}
         mcp_servers: dict[str, Any] = {}
