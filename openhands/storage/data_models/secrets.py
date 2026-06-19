@@ -23,6 +23,7 @@ from openhands.integrations.service_types import ProviderType
 
 # Well-known custom secret names that map to system settings
 WELL_KNOWN_SECRET_LLM_API_KEY = 'anthropic-api-key'
+WELL_KNOWN_SECRET_OPENAI_API_KEY = 'openai-api-key'
 WELL_KNOWN_SECRET_GITHUB_TOKEN = 'github-token'
 WELL_KNOWN_SECRET_NEON_API_KEY = 'neon-api-key'
 WELL_KNOWN_SECRET_B1_ACCESS_KEY_ID = 'b1-access-key-id'

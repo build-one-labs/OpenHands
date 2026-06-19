@@ -1,14 +1,19 @@
 from types import MappingProxyType
 
+import pytest
 from pydantic import SecretStr
 
 from openhands.integrations.provider import CustomSecret, ProviderToken
 from openhands.integrations.service_types import ProviderType
 from openhands.server.user_auth.default_user_auth import (
+    _is_openai_model,
+    _llm_api_key_secret_name,
     _resolve_github_token_from_custom_secret,
 )
 from openhands.storage.data_models.secrets import (
     WELL_KNOWN_SECRET_GITHUB_TOKEN,
+    WELL_KNOWN_SECRET_LLM_API_KEY,
+    WELL_KNOWN_SECRET_OPENAI_API_KEY,
     Secrets,
 )
 
@@ -117,3 +122,65 @@ def test_resolve_github_token_preserves_other_providers():
         result.provider_tokens[ProviderType.GITLAB].token.get_secret_value()
         == 'glpat-test'
     )
+
+
+@pytest.mark.parametrize(
+    'model,expected',
+    [
+        ('gpt-4o', True),
+        ('openai/gpt-4o', True),
+        ('o1-preview', True),
+        ('o3-mini', True),
+        ('o4-mini', True),
+        ('chatgpt-4o-latest', True),
+        ('litellm_proxy/gpt-4o', True),
+        ('claude-sonnet-4-6', False),
+        ('anthropic/claude-3-5-sonnet', False),
+        ('gemini-1.5-pro', False),
+        (None, False),
+        ('', False),
+    ],
+)
+def test_is_openai_model(model, expected):
+    assert _is_openai_model(model) is expected
+
+
+def _custom_secrets(*names):
+    return MappingProxyType(
+        {name: CustomSecret(secret=SecretStr(f'{name}-value')) for name in names}
+    )
+
+
+def test_llm_api_key_secret_name_openai_model_prefers_openai():
+    secrets = _custom_secrets(
+        WELL_KNOWN_SECRET_OPENAI_API_KEY, WELL_KNOWN_SECRET_LLM_API_KEY
+    )
+    assert (
+        _llm_api_key_secret_name('gpt-4o', secrets) == WELL_KNOWN_SECRET_OPENAI_API_KEY
+    )
+
+
+def test_llm_api_key_secret_name_anthropic_model_prefers_anthropic():
+    secrets = _custom_secrets(
+        WELL_KNOWN_SECRET_OPENAI_API_KEY, WELL_KNOWN_SECRET_LLM_API_KEY
+    )
+    assert (
+        _llm_api_key_secret_name('claude-sonnet-4-6', secrets)
+        == WELL_KNOWN_SECRET_LLM_API_KEY
+    )
+
+
+def test_llm_api_key_secret_name_falls_back_to_available_provider():
+    # OpenAI model selected but only the Anthropic key is stored.
+    secrets = _custom_secrets(WELL_KNOWN_SECRET_LLM_API_KEY)
+    assert _llm_api_key_secret_name('gpt-4o', secrets) == WELL_KNOWN_SECRET_LLM_API_KEY
+    # Anthropic model selected but only the OpenAI key is stored.
+    secrets = _custom_secrets(WELL_KNOWN_SECRET_OPENAI_API_KEY)
+    assert (
+        _llm_api_key_secret_name('claude-sonnet-4-6', secrets)
+        == WELL_KNOWN_SECRET_OPENAI_API_KEY
+    )
+
+
+def test_llm_api_key_secret_name_none_when_no_keys():
+    assert _llm_api_key_secret_name('gpt-4o', _custom_secrets()) is None
