@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
@@ -30,6 +31,7 @@ from openhands.server.user_auth.user_auth import UserAuth
 from openhands.storage.data_models.secrets import (
     WELL_KNOWN_SECRET_GITHUB_TOKEN,
     WELL_KNOWN_SECRET_LLM_API_KEY,
+    WELL_KNOWN_SECRET_OPENAI_API_KEY,
     Secrets,
 )
 from openhands.storage.secrets.secrets_store import SecretsStore
@@ -38,6 +40,44 @@ from openhands.storage.settings.settings_store import SettingsStore
 logger = logging.getLogger(__name__)
 
 _SESSION_COOKIES = ('__Secure-b1.session_token', 'b1.session_token')
+
+
+def _is_openai_model(model: str | None) -> bool:
+    """Return True if the model name refers to an OpenAI-hosted model.
+
+    Handles litellm formats such as 'gpt-4o', 'openai/gpt-4o', 'o1-preview'
+    and 'o3-mini', as well as provider-prefixed names like 'litellm_proxy/...'.
+    """
+    if not model:
+        return False
+    model = model.lower()
+    if model.startswith('openai/'):
+        return True
+    short = model.split('/')[-1]
+    return short.startswith(('gpt', 'o1', 'o3', 'o4', 'chatgpt'))
+
+
+def _llm_api_key_secret_name(
+    model: str | None, custom_secrets: Mapping[str, CustomSecret]
+) -> str | None:
+    """Pick the well-known custom secret to use as the LLM API key.
+
+    Prefers the secret matching the selected model's provider, then falls
+    back to whichever provider key is available.
+    """
+    has_openai = WELL_KNOWN_SECRET_OPENAI_API_KEY in custom_secrets
+    has_anthropic = WELL_KNOWN_SECRET_LLM_API_KEY in custom_secrets
+    if _is_openai_model(model):
+        if has_openai:
+            return WELL_KNOWN_SECRET_OPENAI_API_KEY
+        if has_anthropic:
+            return WELL_KNOWN_SECRET_LLM_API_KEY
+    else:
+        if has_anthropic:
+            return WELL_KNOWN_SECRET_LLM_API_KEY
+        if has_openai:
+            return WELL_KNOWN_SECRET_OPENAI_API_KEY
+    return None
 
 
 @dataclass
@@ -94,22 +134,36 @@ class DefaultUserAuth(UserAuth):
             # No stored settings — fall back to config.toml / environment variables
             settings = Settings.from_config()
 
-        # Use anthropic-api-key custom secret as LLM API key fallback
+        # Use a provider-specific custom secret as the LLM API key fallback.
+        # The secret is chosen based on the selected model so that both
+        # OpenAI (openai-api-key) and Anthropic (anthropic-api-key) keys can
+        # be stored and the right one is used for the active model.
         if not settings or not settings.llm_api_key:
             secrets = await self.get_secrets()
-            if secrets and WELL_KNOWN_SECRET_LLM_API_KEY in secrets.custom_secrets:
-                custom = secrets.custom_secrets[WELL_KNOWN_SECRET_LLM_API_KEY]
-                if not settings:
-                    # Create default settings populated from config (model, agent, etc.)
+            custom_secrets = secrets.custom_secrets if secrets else None
+            if custom_secrets:
+                if settings:
+                    # Pick the provider key matching the already-selected model.
+                    secret_name = _llm_api_key_secret_name(
+                        settings.llm_model, custom_secrets
+                    )
+                    if secret_name is not None:
+                        settings.llm_api_key = custom_secrets[secret_name].secret
+                else:
+                    # No stored settings — derive the model and defaults from config.
                     app_config = load_openhands_config()
                     llm_config = app_config.get_llm_config()
-                    settings = Settings(
-                        llm_model=llm_config.model,
-                        llm_base_url=llm_config.base_url,
-                        agent=app_config.default_agent,
-                        max_iterations=app_config.max_iterations,
+                    secret_name = _llm_api_key_secret_name(
+                        llm_config.model, custom_secrets
                     )
-                settings.llm_api_key = custom.secret
+                    if secret_name is not None:
+                        settings = Settings(
+                            llm_model=llm_config.model,
+                            llm_base_url=llm_config.base_url,
+                            agent=app_config.default_agent,
+                            max_iterations=app_config.max_iterations,
+                        )
+                        settings.llm_api_key = custom_secrets[secret_name].secret
 
         self._settings = settings
         return settings
