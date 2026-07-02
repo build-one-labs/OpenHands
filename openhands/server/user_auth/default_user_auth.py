@@ -30,8 +30,8 @@ from openhands.server.settings import Settings
 from openhands.server.user_auth.user_auth import UserAuth
 from openhands.storage.data_models.secrets import (
     WELL_KNOWN_SECRET_GITHUB_TOKEN,
-    WELL_KNOWN_SECRET_KIMI_API_KEY,
     WELL_KNOWN_SECRET_LLM_API_KEY,
+    WELL_KNOWN_SECRET_MOONSHOT_API_KEY,
     WELL_KNOWN_SECRET_OPENAI_API_KEY,
     Secrets,
 )
@@ -85,7 +85,7 @@ def _llm_api_key_secret_name(
     if _is_openai_model(model):
         preferred = WELL_KNOWN_SECRET_OPENAI_API_KEY
     elif _is_kimi_model(model):
-        preferred = WELL_KNOWN_SECRET_KIMI_API_KEY
+        preferred = WELL_KNOWN_SECRET_MOONSHOT_API_KEY
     else:
         preferred = WELL_KNOWN_SECRET_LLM_API_KEY
 
@@ -95,7 +95,7 @@ def _llm_api_key_secret_name(
         preferred,
         WELL_KNOWN_SECRET_LLM_API_KEY,
         WELL_KNOWN_SECRET_OPENAI_API_KEY,
-        WELL_KNOWN_SECRET_KIMI_API_KEY,
+        WELL_KNOWN_SECRET_MOONSHOT_API_KEY,
     ):
         if name in custom_secrets:
             return name
@@ -159,8 +159,8 @@ class DefaultUserAuth(UserAuth):
         # Use a provider-specific custom secret as the LLM API key fallback.
         # The secret is chosen based on the selected model so that Anthropic
         # (anthropic-api-key), OpenAI (openai-api-key) and Kimi/Moonshot
-        # (kimi-api-key) keys can all be stored and the right one is used for
-        # the active model.
+        # (moonshot-api-key) keys can all be stored and the right one is used
+        # for the active model.
         if not settings or not settings.llm_api_key:
             secrets = await self.get_secrets()
             custom_secrets = secrets.custom_secrets if secrets else None

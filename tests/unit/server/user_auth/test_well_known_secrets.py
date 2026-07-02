@@ -13,8 +13,8 @@ from openhands.server.user_auth.default_user_auth import (
 )
 from openhands.storage.data_models.secrets import (
     WELL_KNOWN_SECRET_GITHUB_TOKEN,
-    WELL_KNOWN_SECRET_KIMI_API_KEY,
     WELL_KNOWN_SECRET_LLM_API_KEY,
+    WELL_KNOWN_SECRET_MOONSHOT_API_KEY,
     WELL_KNOWN_SECRET_OPENAI_API_KEY,
     Secrets,
 )
@@ -205,13 +205,13 @@ def test_llm_api_key_secret_name_falls_back_to_available_provider():
 
 def test_llm_api_key_secret_name_kimi_model_prefers_kimi():
     secrets = _custom_secrets(
-        WELL_KNOWN_SECRET_KIMI_API_KEY,
+        WELL_KNOWN_SECRET_MOONSHOT_API_KEY,
         WELL_KNOWN_SECRET_OPENAI_API_KEY,
         WELL_KNOWN_SECRET_LLM_API_KEY,
     )
     assert (
         _llm_api_key_secret_name('moonshot/kimi-k2-0711-preview', secrets)
-        == WELL_KNOWN_SECRET_KIMI_API_KEY
+        == WELL_KNOWN_SECRET_MOONSHOT_API_KEY
     )
 
 

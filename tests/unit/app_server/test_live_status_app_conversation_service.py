@@ -2375,7 +2375,7 @@ class TestLiveStatusAppConversationService:
         self.mock_user.llm_api_key = SecretStr('sk-ant-default')
         self.mock_user_context.get_secrets = AsyncMock(
             return_value={
-                'kimi-api-key': StaticSecret(value=SecretStr('sk-kimi-stored')),
+                'moonshot-api-key': StaticSecret(value=SecretStr('sk-kimi-stored')),
                 'anthropic-api-key': StaticSecret(value=SecretStr('sk-ant-stored')),
             }
         )
@@ -2395,7 +2395,7 @@ class TestLiveStatusAppConversationService:
         self.mock_user.llm_base_url = None
         self.mock_user_context.get_secrets = AsyncMock(
             return_value={
-                'kimi-api-key': StaticSecret(value=SecretStr('sk-kimi-stored')),
+                'moonshot-api-key': StaticSecret(value=SecretStr('sk-kimi-stored')),
             }
         )
 
