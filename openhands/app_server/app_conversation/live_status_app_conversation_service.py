@@ -91,6 +91,7 @@ from openhands.sdk.utils.paging import page_iterator
 from openhands.sdk.workspace.remote.async_remote_workspace import AsyncRemoteWorkspace
 from openhands.server.types import AppMode
 from openhands.storage.data_models.secrets import (
+    WELL_KNOWN_SECRET_KIMI_API_KEY,
     WELL_KNOWN_SECRET_LLM_API_KEY,
     WELL_KNOWN_SECRET_OPENAI_API_KEY,
 )
@@ -1178,6 +1179,8 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             secret_name = WELL_KNOWN_SECRET_OPENAI_API_KEY
         elif provider == 'anthropic':
             secret_name = WELL_KNOWN_SECRET_LLM_API_KEY
+        elif provider == 'moonshot':
+            secret_name = WELL_KNOWN_SECRET_KIMI_API_KEY
         if not secret_name:
             return user.llm_api_key
 

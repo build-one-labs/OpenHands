@@ -30,6 +30,7 @@ from openhands.server.settings import Settings
 from openhands.server.user_auth.user_auth import UserAuth
 from openhands.storage.data_models.secrets import (
     WELL_KNOWN_SECRET_GITHUB_TOKEN,
+    WELL_KNOWN_SECRET_KIMI_API_KEY,
     WELL_KNOWN_SECRET_LLM_API_KEY,
     WELL_KNOWN_SECRET_OPENAI_API_KEY,
     Secrets,
@@ -57,6 +58,21 @@ def _is_openai_model(model: str | None) -> bool:
     return short.startswith(('gpt', 'o1', 'o3', 'o4', 'chatgpt'))
 
 
+def _is_kimi_model(model: str | None) -> bool:
+    """Return True if the model name refers to a Kimi (Moonshot) model.
+
+    Handles litellm formats such as 'moonshot/kimi-k2-0711-preview' and
+    'moonshot/moonshot-v1-8k', as well as bare names like 'kimi-latest'.
+    """
+    if not model:
+        return False
+    model = model.lower()
+    if model.startswith('moonshot/'):
+        return True
+    short = model.split('/')[-1]
+    return short.startswith(('kimi', 'moonshot'))
+
+
 def _llm_api_key_secret_name(
     model: str | None, custom_secrets: Mapping[str, CustomSecret]
 ) -> str | None:
@@ -65,18 +81,24 @@ def _llm_api_key_secret_name(
     Prefers the secret matching the selected model's provider, then falls
     back to whichever provider key is available.
     """
-    has_openai = WELL_KNOWN_SECRET_OPENAI_API_KEY in custom_secrets
-    has_anthropic = WELL_KNOWN_SECRET_LLM_API_KEY in custom_secrets
+    # Provider-specific secret matching the selected model.
     if _is_openai_model(model):
-        if has_openai:
-            return WELL_KNOWN_SECRET_OPENAI_API_KEY
-        if has_anthropic:
-            return WELL_KNOWN_SECRET_LLM_API_KEY
+        preferred = WELL_KNOWN_SECRET_OPENAI_API_KEY
+    elif _is_kimi_model(model):
+        preferred = WELL_KNOWN_SECRET_KIMI_API_KEY
     else:
-        if has_anthropic:
-            return WELL_KNOWN_SECRET_LLM_API_KEY
-        if has_openai:
-            return WELL_KNOWN_SECRET_OPENAI_API_KEY
+        preferred = WELL_KNOWN_SECRET_LLM_API_KEY
+
+    # Use the provider-matched key if stored, otherwise fall back to any
+    # available provider key (Anthropic first, preserving prior behaviour).
+    for name in (
+        preferred,
+        WELL_KNOWN_SECRET_LLM_API_KEY,
+        WELL_KNOWN_SECRET_OPENAI_API_KEY,
+        WELL_KNOWN_SECRET_KIMI_API_KEY,
+    ):
+        if name in custom_secrets:
+            return name
     return None
 
 
@@ -135,9 +157,10 @@ class DefaultUserAuth(UserAuth):
             settings = Settings.from_config()
 
         # Use a provider-specific custom secret as the LLM API key fallback.
-        # The secret is chosen based on the selected model so that both
-        # OpenAI (openai-api-key) and Anthropic (anthropic-api-key) keys can
-        # be stored and the right one is used for the active model.
+        # The secret is chosen based on the selected model so that Anthropic
+        # (anthropic-api-key), OpenAI (openai-api-key) and Kimi/Moonshot
+        # (kimi-api-key) keys can all be stored and the right one is used for
+        # the active model.
         if not settings or not settings.llm_api_key:
             secrets = await self.get_secrets()
             custom_secrets = secrets.custom_secrets if secrets else None
