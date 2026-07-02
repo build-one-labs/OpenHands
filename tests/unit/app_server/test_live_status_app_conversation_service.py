@@ -518,6 +518,30 @@ class TestLiveStatusAppConversationService:
         assert llm.base_url == 'https://user-llm.example.com'
 
     @pytest.mark.asyncio
+    async def test_configure_llm_and_mcp_moonshot_model_pins_top_p(self):
+        """Moonshot/Kimi models must send top_p=0.95; other values are rejected
+        by the API (e.g. 'invalid top_p: only 0.95 is allowed for this model')."""
+        self.mock_user.llm_model = 'moonshot/kimi-k2.7-code'
+        self.mock_user.llm_base_url = None
+        self.mock_user_context.get_mcp_api_key.return_value = None
+
+        llm, _ = await self.service._configure_llm_and_mcp(self.mock_user, None)
+
+        assert llm.model == 'moonshot/kimi-k2.7-code'
+        assert llm.top_p == 0.95
+
+    @pytest.mark.asyncio
+    async def test_configure_llm_and_mcp_non_moonshot_model_default_top_p(self):
+        """Non-Moonshot, non-suppressed models keep the default top_p=1.0."""
+        self.mock_user.llm_model = 'gpt-4'
+        self.mock_user.llm_base_url = None
+        self.mock_user_context.get_mcp_api_key.return_value = None
+
+        llm, _ = await self.service._configure_llm_and_mcp(self.mock_user, None)
+
+        assert llm.top_p == 1.0
+
+    @pytest.mark.asyncio
     async def test_configure_llm_and_mcp_with_user_default_model(self):
         """Test _configure_llm_and_mcp using user's default model."""
         # Arrange

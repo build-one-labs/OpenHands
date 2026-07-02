@@ -1149,12 +1149,25 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             )
         )
 
+        # Moonshot/Kimi constraint: some models (e.g. kimi-k2.7-code) reject any
+        # top_p other than 0.95 ("invalid top_p: only 0.95 is allowed for this
+        # model"). 0.95 is also a valid value for the other Moonshot models, so
+        # pin it for the whole provider.
+        _is_moonshot = _model_lower.startswith('moonshot/')
+
+        if _needs_top_p_suppressed:
+            _top_p: float | None = None
+        elif _is_moonshot:
+            _top_p = 0.95
+        else:
+            _top_p = 1.0
+
         return LLM(
             model=model,
             base_url=base_url,
             api_key=api_key or user.llm_api_key,
             usage_id='agent',
-            top_p=None if _needs_top_p_suppressed else 1.0,
+            top_p=_top_p,
         )
 
     async def _resolve_provider_api_key(
