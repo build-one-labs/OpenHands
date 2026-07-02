@@ -2366,3 +2366,45 @@ class TestLiveStatusAppConversationService:
 
         assert llm.model == 'openai/gpt-5.5'
         assert llm.api_key.get_secret_value() == 'sk-openai-stored'
+
+    @pytest.mark.asyncio
+    async def test_resolve_provider_api_key_kimi_override_picks_kimi_key(self):
+        """Default model is Anthropic, but the conversation uses a Kimi
+        (Moonshot) model: the Kimi custom secret must be selected."""
+        self.mock_user.llm_model = 'anthropic/claude-opus-4-6'
+        self.mock_user.llm_api_key = SecretStr('sk-ant-default')
+        self.mock_user_context.get_secrets = AsyncMock(
+            return_value={
+                'kimi-api-key': StaticSecret(value=SecretStr('sk-kimi-stored')),
+                'anthropic-api-key': StaticSecret(value=SecretStr('sk-ant-stored')),
+            }
+        )
+
+        key = await self.service._resolve_provider_api_key(
+            'moonshot/kimi-k2-0711-preview', self.mock_user
+        )
+
+        assert key.get_secret_value() == 'sk-kimi-stored'
+
+    @pytest.mark.asyncio
+    async def test_configure_llm_and_mcp_pairs_kimi_model_with_matching_key(self):
+        """End-to-end: a per-conversation Kimi model is paired with the stored
+        Kimi key rather than the Anthropic default."""
+        self.mock_user.llm_model = 'anthropic/claude-opus-4-6'
+        self.mock_user.llm_api_key = SecretStr('sk-ant-default')
+        self.mock_user.llm_base_url = None
+        self.mock_user_context.get_secrets = AsyncMock(
+            return_value={
+                'kimi-api-key': StaticSecret(value=SecretStr('sk-kimi-stored')),
+            }
+        )
+
+        with patch.object(
+            self.service, '_add_system_mcp_servers', new=AsyncMock(return_value=None)
+        ):
+            llm, _ = await self.service._configure_llm_and_mcp(
+                self.mock_user, 'moonshot/kimi-k2-0711-preview'
+            )
+
+        assert llm.model == 'moonshot/kimi-k2-0711-preview'
+        assert llm.api_key.get_secret_value() == 'sk-kimi-stored'

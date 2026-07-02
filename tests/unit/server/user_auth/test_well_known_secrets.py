@@ -6,12 +6,14 @@ from pydantic import SecretStr
 from openhands.integrations.provider import CustomSecret, ProviderToken
 from openhands.integrations.service_types import ProviderType
 from openhands.server.user_auth.default_user_auth import (
+    _is_kimi_model,
     _is_openai_model,
     _llm_api_key_secret_name,
     _resolve_github_token_from_custom_secret,
 )
 from openhands.storage.data_models.secrets import (
     WELL_KNOWN_SECRET_GITHUB_TOKEN,
+    WELL_KNOWN_SECRET_KIMI_API_KEY,
     WELL_KNOWN_SECRET_LLM_API_KEY,
     WELL_KNOWN_SECRET_OPENAI_API_KEY,
     Secrets,
@@ -145,6 +147,25 @@ def test_is_openai_model(model, expected):
     assert _is_openai_model(model) is expected
 
 
+@pytest.mark.parametrize(
+    'model,expected',
+    [
+        ('moonshot/kimi-k2-0711-preview', True),
+        ('moonshot/moonshot-v1-8k', True),
+        ('moonshot/kimi-latest', True),
+        ('kimi-thinking-preview', True),
+        ('litellm_proxy/kimi-latest', True),
+        ('gpt-4o', False),
+        ('claude-sonnet-4-6', False),
+        ('anthropic/claude-3-5-sonnet', False),
+        (None, False),
+        ('', False),
+    ],
+)
+def test_is_kimi_model(model, expected):
+    assert _is_kimi_model(model) is expected
+
+
 def _custom_secrets(*names):
     return MappingProxyType(
         {name: CustomSecret(secret=SecretStr(f'{name}-value')) for name in names}
@@ -179,6 +200,27 @@ def test_llm_api_key_secret_name_falls_back_to_available_provider():
     assert (
         _llm_api_key_secret_name('claude-sonnet-4-6', secrets)
         == WELL_KNOWN_SECRET_OPENAI_API_KEY
+    )
+
+
+def test_llm_api_key_secret_name_kimi_model_prefers_kimi():
+    secrets = _custom_secrets(
+        WELL_KNOWN_SECRET_KIMI_API_KEY,
+        WELL_KNOWN_SECRET_OPENAI_API_KEY,
+        WELL_KNOWN_SECRET_LLM_API_KEY,
+    )
+    assert (
+        _llm_api_key_secret_name('moonshot/kimi-k2-0711-preview', secrets)
+        == WELL_KNOWN_SECRET_KIMI_API_KEY
+    )
+
+
+def test_llm_api_key_secret_name_kimi_model_falls_back_when_no_kimi_key():
+    # Kimi model selected but only the Anthropic key is stored.
+    secrets = _custom_secrets(WELL_KNOWN_SECRET_LLM_API_KEY)
+    assert (
+        _llm_api_key_secret_name('moonshot/kimi-latest', secrets)
+        == WELL_KNOWN_SECRET_LLM_API_KEY
     )
 
 
