@@ -139,6 +139,9 @@ PROMPT_CACHE_PATTERNS: list[str] = [
     'claude-3-haiku-20240307',
     'claude-3-opus-20240229',
     'claude-sonnet-4*',
+    # claude-sonnet-5 is not covered by claude-sonnet-4*; without it every
+    # input token bills uncached, cancelling the tier's price advantage.
+    'claude-sonnet-5*',
     'claude-opus-4*',
     'gemini-3.1-pro*',
     # Kimi series - verified via litellm config
