@@ -730,6 +730,27 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             headers['Authorization'] = auth_header
             config['headers'] = headers
 
+    @staticmethod
+    def _apply_conversation_id_header(
+        mcp_servers: dict[str, Any],
+        conversation_id: str,
+        server_names: list[str],
+    ) -> None:
+        """Set `X-OpenHands-ServerConversation-ID` on the given MCP server configs.
+
+        Forwards the calling conversation's id so the remote MCP server can link
+        its recording back to this conversation. Uses the same header name the
+        `default` OpenHands MCP server already receives (see
+        `_add_system_mcp_servers`). Overwrites any existing value.
+        """
+        for name in server_names:
+            config = mcp_servers.get(name)
+            if config is None:
+                continue
+            headers = dict(config.get('headers') or {})
+            headers['X-OpenHands-ServerConversation-ID'] = conversation_id
+            config['headers'] = headers
+
     async def _build_app_conversations(
         self, app_conversation_infos: Sequence[AppConversationInfo | None]
     ) -> list[AppConversation | None]:
@@ -1789,6 +1810,18 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 self._apply_mcp_auth_token(
                     mcp_config.get('mcpServers', {}),
                     mcp_auth_token,
+                    mcp_server_names_needing_auth,
+                )
+
+            # Forward the conversation id to the same environment-provided and
+            # API-provided MCP servers so they can link their recording back to
+            # this conversation. The built-in `default` server already receives
+            # this header (see `_add_system_mcp_servers`); the environment/API
+            # servers do not, so add it here.
+            if conversation_id_hex:
+                self._apply_conversation_id_header(
+                    mcp_config.get('mcpServers', {}),
+                    conversation_id_hex,
                     mcp_server_names_needing_auth,
                 )
 
