@@ -1,7 +1,7 @@
 ---
 name: commit-environment-changes
 type: knowledge
-version: 1.1.0
+version: 2.0.0
 agent: CodeActAgent
 triggers:
 - commit environment changes
@@ -18,222 +18,161 @@ triggers:
 Blueprint objects edited in a running B1 environment live only in the database
 until they are exported to JSON files and committed to the environment's linked
 source repository. This skill automates that round trip from inside the
-OpenHands sandbox:
+OpenHands sandbox in **three turns**:
 
-1. Resolve the linked repository from the running environment.
-2. Make sure the linked repository is checked out in the sandbox workspace
-   (reuse an existing checkout; only clone when there is none).
-3. Export the modified blueprint objects from the environment.
-4. Commit and push them on a new branch for review.
+1. Export the modified objects and resolve the linked repository (two parallel
+   tool calls).
+2. Run ONE bash script that downloads the export over HTTP, refreshes a shallow
+   checkout, commits, pushes, and (when requested) opens the PR.
+3. Report the result.
 
-The sandbox workspace **may already contain a checkout** of the linked
-repository (with its own `.git` directory and `origin` remote). When it does,
-reuse it — fetch and reset to the default branch instead of deleting `.git` and
-re-cloning. Only clone when no checkout exists (Step 2).
+Do not add steps. The deterministic work (auth, checkout, unzip, commit, push,
+PR) is all inside the script — your only decisions are the branch name and the
+commit/PR text.
 
 It relies on two `B1_Blueprint` MCP tools:
 
 | Tool | Role in this skill |
 | --- | --- |
 | `mcp__B1_Blueprint__get_application_info` | Fetch the linked repository identifier |
-| `mcp__B1_Blueprint__export_modified_zip` | Export modified blueprint objects as a zip |
+| `mcp__B1_Blueprint__export_modified_zip` | Export modified objects + stage a downloadable zip |
 
-> ⚠️ Do **not** use `mcp__B1_Blueprint__export_objects` in this workflow. It
-> writes to the appserver and clears the "modified" flag, breaking
-> `export_modified_zip`. See the warning in Step 3.
+> ⚠️ Do **not** use `mcp__B1_Blueprint__export_objects` in this workflow — it
+> clears the "modified" state without staging anything downloadable.
 
 ## Prerequisites
 
-- The `gh` CLI must see a GitHub token. The sandbox may inject it under any of a
-  few names, so resolve it explicitly **before any `gh` or `git` call** (see
-  Step 0). No interactive login is needed — and none is available inside the
-  sandbox.
-- Git identity is configured (`git config user.name` / `user.email`); set it if
-  it is missing.
+- The sandbox injects `github-token` (GitHub) and `buildone-token` (B1
+  environment) secrets. Both are dash-cased env names, so read them with
+  `printenv`, not `$github-token`. No interactive login exists in the sandbox —
+  never run `gh auth login`.
 - The `B1_Blueprint` MCP server is reachable (the environment must be running).
 
-## Workflow
+## Step 1 — Export and resolve the repository (one turn, two parallel calls)
 
-### Step 0 — Resolve GitHub auth
+Call **in parallel**:
 
-`gh` reads `GH_TOKEN`/`GITHUB_TOKEN`, but the sandbox sometimes injects the
-secret under a dash-cased name (`github-token`) that the shell cannot expand as
-`$github-token`. Resolve all three sources in one shot, then stop guessing:
+- `mcp__B1_Blueprint__get_application_info` → read `repository`
+  (`owner/repo`, e.g. `build-one-labs/vanguard`). If null/missing, stop and
+  tell the user the environment has no linked repository.
+- `mcp__B1_Blueprint__export_modified_zip` → the text payload contains
+  `fileCount`, `files` (the exported `repository/<module>/<object>.json`
+  entries), `filename`, and download coordinates (`downloadUrl` or
+  `downloadPath` + `curlExample`).
+
+Interpret the export result:
+
+- `fileCount > 0` → proceed; use `files` to write the branch name, commit
+  message, and PR text.
+- `fileCount: 0` **with** `latestStagedZip` → a previous export already staged
+  the changes (the zip is still downloadable). Proceed with that filename.
+- `fileCount: 0` without `latestStagedZip` → nothing to commit. Stop and tell
+  the user.
+
+If the result has only `downloadPath` (no absolute `downloadUrl`), prefix it
+with the environment URL you are connected to.
+
+> The zip is staged **on the appserver** and served over HTTP. Never search the
+> sandbox filesystem for it (`find /` finds nothing), never rebuild the JSON
+> via `query_blueprint` SQL or `get_object` — if anything is lost, just curl
+> the download endpoint again; it is non-destructive and repeatable.
+
+## Step 2 — One script: download, commit, push, PR (one turn)
+
+Fill ONLY the variables at the top, then run the whole block as a single
+terminal command. Derive `BRANCH` from the changed objects
+(`blueprint/update-<object-name>` for one object,
+`blueprint/update-<module>-<count>-objects` for several in one module,
+`blueprint/update-environment-<count>-objects` across modules; lowercase,
+under ~50 chars). Set `PR_TITLE` empty to stop after the push (when the user
+did not ask for a PR); set `DRAFT='--draft'` when they asked for a draft PR.
 
 ```bash
+set -euo pipefail
+# ---- fill these ----
+REPO='<owner/repo from get_application_info>'
+DOWNLOAD_URL='<downloadUrl from export_modified_zip>'
+ZIP_NAME='<filename or latestStagedZip from export_modified_zip>'
+BRANCH='blueprint/<derived-branch-name>'
+COMMIT_MSG='Export modified blueprint objects from environment
+
+<one line per changed object, e.g. "- Update customerScreen (Samples)">'
+PR_TITLE='<title from the changes, or empty to skip the PR>'
+PR_BODY='<one bullet per changed object>'
+DRAFT=''   # set to --draft for a draft PR
+# ---- verbatim from here ----
+export GIT_TERMINAL_PROMPT=0
 export GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-$(printenv github-token 2>/dev/null)}}"
-test -n "$GH_TOKEN" || { echo "No GitHub token found in GH_TOKEN, GITHUB_TOKEN, or github-token"; exit 1; }
-```
+test -n "$GH_TOKEN" || { echo "No GitHub token in GH_TOKEN, GITHUB_TOKEN, or github-token"; exit 1; }
+B1_TOKEN="$(printenv buildone-token 2>/dev/null)"
+test -n "$B1_TOKEN" || { echo "No buildone-token secret found"; exit 1; }
+cd /workspace/project
 
-If `$GH_TOKEN` is empty after this, the secret was not injected — report that to
-the user and stop. **Do not** spend calls probing with `gh auth status`,
-`env | grep`, or `printenv ... | wc -c`; the one command above is the complete
-check.
+curl -fS --max-time 60 -X POST "$DOWNLOAD_URL" \
+  -H "Authorization: Bearer $B1_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"filename\":\"$ZIP_NAME\"}" -o /tmp/modified-objects.zip
+unzip -l /tmp/modified-objects.zip
 
-### Step 1 — Resolve the linked repository
+git init -q .
+git config user.name  "Build.One Agent"
+git config user.email "agents@build.one"
+git remote remove origin 2>/dev/null || true
+git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+BASE="$(gh repo view "$REPO" --json defaultBranchRef -q .defaultBranchRef.name)"
+git sparse-checkout set --cone src/data
+git fetch -q --depth=1 --filter=blob:none origin "$BASE"
+git checkout -qf -B "$BRANCH" "origin/$BASE"
 
-Call `mcp__B1_Blueprint__get_application_info`. Read the `repository` field — a
-GitHub `owner/repo` identifier, e.g. `build-one-labs/vanguard`.
-
-If `repository` is null or missing, stop and tell the user the environment has
-no linked repository (the `REPOSITORY` env var is unset on the appserver).
-
-### Step 2 — Ensure the linked repository is checked out
-
-The workspace may or may not already contain the checkout. Detect which case
-you are in and reuse an existing checkout — **never `rm -rf .git` and re-clone**
-just to get a clean state.
-
-```bash
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  # Existing checkout — make sure it points at the linked repo, then refresh it.
-  git remote set-url origin "https://github.com/<repository>.git"
-  DEFAULT_BRANCH="$(git remote show origin | sed -n 's/.*HEAD branch: //p')"
-  git fetch origin "$DEFAULT_BRANCH"
-  # -f discards any stale local changes; -B resets the branch onto origin.
-  git checkout -f -B "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
+unzip -oq /tmp/modified-objects.zip -d src/data
+git add src/data
+git commit -q -m "$COMMIT_MSG"
+git push -q -u origin "$BRANCH"
+if [ -n "$PR_TITLE" ]; then
+  gh pr create --repo "$REPO" --base "$BASE" --head "$BRANCH" \
+    --title "$PR_TITLE" --body "$PR_BODY" $DRAFT
 else
-  # No checkout — clone into the working directory.
-  gh repo clone <repository> .
+  echo "Pushed. Compare: https://github.com/${REPO}/compare/${BASE}...${BRANCH}"
 fi
 ```
 
-If the working directory is non-empty but is *not* a git checkout, clone into a
-subdirectory instead (`gh repo clone <repository> <repo-name>`) and run the
-remaining steps from inside it.
+Why the script looks like this — do not "improve" these away:
 
-Either way you end up on the repository's default branch with `origin`
-configured against the linked repo — the new branch in Step 5 is created from
-it. `gh`/`git` authenticate with the `$GH_TOKEN` resolved in Step 0.
+- `GIT_TERMINAL_PROMPT=0` + the token embedded in the remote URL: git does
+  **not** read `GH_TOKEN` (only `gh` does). Without both, `git fetch` prompts
+  `Username for 'https://github.com':` and hangs until the terminal timeout.
+- `gh repo view` for the default branch — never `git remote show origin`,
+  which makes an interactive-prone network call.
+- Sparse cone `src/data` + `--depth=1 --filter=blob:none`: the commit only
+  touches `src/data/repository/**`, so nothing else needs to be materialized.
+  If the fetch fails oddly, retry once without `--filter=blob:none`.
+- `git init` is idempotent: it adopts the empty repo the sandbox starts with
+  and is a no-op on an existing checkout. Never `rm -rf .git` or re-clone.
 
-### Step 3 — Export modified blueprint objects
+If the download returns 404, the staging was cleared (e.g. appserver
+restart): re-run `export_modified_zip`; if that also reports nothing, fall
+back to POST `<environment-url>/service/swat/server-actions/repository/modified-objects/download-local-files-as-zip`
+(same auth header, no body) — on standalone stacks it streams the previously
+exported files.
 
-> ⚠️ **Use `export_modified_zip` — never `export_objects` first.**
-> There is a second, similarly named tool, `mcp__B1_Blueprint__export_objects`
-> (`action: "export"`), that looks like the right thing to reach for. It is
-> **not.** It writes JSON to the *appserver's* filesystem and **clears the
-> "modified" flag** on the objects as a side effect. If you call it before
-> `export_modified_zip`, the export then returns `fileCount: 0` because the
-> modified state is already gone — and you cannot get it back without re-editing
-> the objects. `export_modified_zip` is read-only with respect to that flag, so
-> reach for it directly and **do not call `export_objects` anywhere in this
-> workflow.**
+## Step 3 — Report (one turn)
 
-Call `mcp__B1_Blueprint__export_modified_zip`. The result has two parts:
-
-- A text block with `{ success, fileCount, sizeBytes, filename }`.
-- A resource block (`mimeType: application/zip`) whose blob is the base64 zip.
-
-**The base64 blob in the tool result is the only source of the exported files
-that exists inside the sandbox.** The tool also writes the JSON into the
-appserver's `APP_DATA_FOLDER`, but that folder lives on the *appserver*
-container, not the sandbox filesystem — so do **not** `find / -name
-'modified-objects-*.zip'` or otherwise search disk for it (you will find
-nothing), and do **not** reconstruct the JSON by hand via `get_object` or SQL.
-Decode the blob from the tool result directly.
-
-Handle the outcome:
-
-- If `fileCount` is `0`, stop — there are no modified objects to commit.
-- Otherwise, write the base64 blob to a file and unzip it into `src/data/`:
-
-```bash
-# Save the base64 blob from the tool's resource block to export.b64, then:
-base64 -d export.b64 > export.zip
-unzip -o export.zip -d src/data/
-rm export.b64 export.zip
-```
-
-The zip entries are paths like `repository/<module>/<object>.json` (relative to
-the appserver's `APP_DATA_FOLDER`). In the repository these files live under
-`src/data/`, so they extract to `src/data/repository/<module>/<object>.json`.
-
-### Step 4 — Derive a branch name from the changes
-
-Inspect what changed and name the branch after it:
-
-```bash
-git status --porcelain src/data/
-```
-
-Derive a short kebab-case branch name from the changed files under
-`src/data/repository/`:
-
-- Single object changed → `blueprint/update-<object-name>`
-- Multiple objects in one module → `blueprint/update-<module>-<count>-objects`
-- Multiple modules → `blueprint/update-environment-<count>-objects`
-
-Lowercase everything; keep the name under ~50 characters.
-
-### Step 5 — Commit and push on a new branch
-
-```bash
-git checkout -b <branch-name>
-git add src/data/
-git commit -m "$(cat <<'EOF'
-Export modified blueprint objects from environment
-
-<one line per changed object, e.g. "- Update CustomerScreen (Samples)">
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
-EOF
-)"
-git push -u origin <branch-name>
-```
-
-`git push` and `gh pr create` use the `origin` remote and the `$GH_TOKEN`
-resolved in Step 0, so no further auth setup is needed.
-
-### Step 6 — Offer to open the pull request (optional, one path only)
-
-Opening a PR is **optional** — do not create one automatically. After the push,
-report the branch name and its compare URL, then **ask the user whether they
-want a pull request**. Only run `gh pr create` if they say yes.
-
-When they do, base the PR title and body on the actual committed changes — the
-same per-object summary used in the commit message — not a generic title:
-
-```bash
-# Title: name the object(s) changed, e.g. "Update SalesTourScreen (Samples)"
-# for a single object, or "Update 3 blueprint objects (Samples)" for several.
-# Body: one bullet per changed object, derived from `git status`/`git log` over
-# the files under src/data/repository/.
-gh pr create \
-  --title "<title from the committed changes>" \
-  --body "$(cat <<'EOF'
-<one bullet per changed object, e.g. "- Update SalesTourScreen (Samples)">
-EOF
-)"
-```
-
-Use **exactly one** PR-creation path — `gh pr create`. Do not also create a PR
-through any other path (e.g. an MCP PR tool); creating it twice opens duplicate
-PRs and wastes calls. Report the resulting PR URL to the user.
+Report the PR URL printed by `gh pr create` (or the compare URL after a
+push-only run), plus the per-object summary from `files`.
 
 ## Notes
 
-- Never commit straight to the default branch — always use the new branch from
-  Step 4 so changes go through review.
-- **`export_objects` is a trap, not a step.** It is a separate MCP tool that
-  writes to the appserver and clears the "modified" flag; calling it before
-  `export_modified_zip` makes the export return `fileCount: 0` and the change is
-  effectively lost. Never call it in this workflow — use `export_modified_zip`.
-- `export_modified_zip` also writes the JSON files into the running appserver's
-  local `APP_DATA_FOLDER`, but that folder is on the appserver container, not the
-  sandbox. The base64 blob in the tool result is the only sandbox-side source —
-  never search the sandbox filesystem for the exported zip/JSON.
-- Only `src/data/` is staged (`git add src/data/`), so unrelated workspace files
-  are never committed.
-- If `gh`/`git` fails on authentication, the GitHub token resolved in Step 0 is
-  missing or expired — report this to the user. There is no interactive login
-  inside the sandbox, so do not attempt `gh auth login`.
+- Never commit straight to the default branch.
+- Use **exactly one** PR-creation path — `gh pr create` inside the script. Do
+  not also call an MCP PR tool; that opens duplicate PRs.
+- Only `src/data/` is staged, so unrelated workspace files are never committed.
+- On auth failure, the relevant secret is missing or expired — report it; do
+  not probe with `gh auth status`, `env | grep`, or repeated retries.
 
 ## Key References
 
-| Purpose | Location |
+| Purpose | Location (vanguard) |
 | --- | --- |
 | `get_application_info` tool | `src/swat-app-server-ts/src/mcp/tools/application.tools.ts` |
-| `export_modified_zip` tool | `src/swat-app-server-ts/src/mcp/tools/repository.tools.ts` (`exportModifiedBlueprintObjectsAsZip`) |
-| `export_objects` tool (avoid — clears modified flag) | `src/swat-app-server-ts/src/mcp/tools/repository.tools.ts` |
-| Tool registration | `src/swat-app-server-ts/src/mcp/mcp-server.factory.ts` |
-| Linked repository env var | `REPOSITORY` (set per environment in `.build/deploy/*.deployment.config.json`) |
+| `export_modified_zip` tool (stages the zip) | `src/swat-app-server-ts/src/mcp/tools/repository.tools.ts` |
+| `download-staged-zip` endpoint | `src/swat-app-server-ts/src/server-actions/repository/modified-objects.controller.ts` |
+| Staging folder | `EXPORT_STAGING_FOLDER` (default `os.tmpdir()/b1-modified-object-zips`) |
