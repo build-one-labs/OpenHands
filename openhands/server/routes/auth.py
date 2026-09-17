@@ -25,11 +25,6 @@ BETTER_AUTH_URL = os.environ.get('BETTER_AUTH_URL', '').rstrip('/')
 BETTER_AUTH_SECRET = os.environ.get('BETTER_AUTH_SECRET', '')
 _SESSION_COOKIES = ('__Secure-b1.session_token', 'b1.session_token')
 
-# Sign-in method ids that mean email+password rather than a social provider
-_PASSWORD_METHOD_IDS = frozenset(
-    {'password', 'email', 'email-password', 'credential', 'credentials'}
-)
-
 # Regexes to strip Domain and Path attributes from proxied Set-Cookie headers
 _DOMAIN_ATTR_RE = re.compile(r';\s*domain=[^;]*', re.IGNORECASE)
 _PATH_ATTR_RE = re.compile(r';\s*path=[^;]*', re.IGNORECASE)
@@ -233,9 +228,10 @@ async def sign_in_social(request: Request):
 def _split_sign_in_methods(methods: object) -> tuple[list[str], bool]:
     """Split Better Auth's `methods` into social provider ids and a password flag.
 
-    Entries arrive either as bare ids or as objects naming the provider under
-    one of providerId/provider/id/type, so accept both rather than pinning to a
-    single shape.
+    Entries look like `{"id": "b1-github", "type": "github", "kind": "oauth"}`.
+    `kind` is `local` for email+password and `oauth` for social providers; the
+    social provider name Better Auth's sign-in/social expects is `type` (`id` is
+    the organization's configuration id, e.g. `b1-github`).
     """
     providers: list[str] = []
     password_enabled = False
@@ -244,27 +240,19 @@ def _split_sign_in_methods(methods: object) -> tuple[list[str], bool]:
         return providers, password_enabled
 
     for method in methods:
-        if isinstance(method, str):
-            name = method
-        elif isinstance(method, dict):
-            if method.get('enabled') is False:
-                continue
-            name = (
-                method.get('providerId')
-                or method.get('provider')
-                or method.get('id')
-                or method.get('type')
-                or ''
-            )
-        else:
+        if not isinstance(method, dict):
             continue
-
-        if not isinstance(name, str) or not name:
-            continue
-        if name.lower() in _PASSWORD_METHOD_IDS:
+        kind = method.get('kind')
+        provider = method.get('type')
+        if kind == 'local':
             password_enabled = True
-        elif name not in providers:
-            providers.append(name)
+        elif (
+            kind == 'oauth'
+            and isinstance(provider, str)
+            and provider
+            and provider not in providers
+        ):
+            providers.append(provider)
 
     return providers, password_enabled
 

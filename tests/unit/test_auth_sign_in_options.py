@@ -34,6 +34,30 @@ def _patch_get(resp: MagicMock | Exception):
     return patch.object(auth_routes.httpx, 'AsyncClient', return_value=ctx), client
 
 
+# Entries as returned by /api/auth/b1/authentication
+_BASIC = {
+    'id': 'basic',
+    'type': 'basic',
+    'label': 'E-mail and password',
+    'icon': 'pi pi-envelope',
+    'kind': 'local',
+}
+_MICROSOFT = {
+    'id': 'b1-microsoft',
+    'type': 'microsoft',
+    'label': 'Microsoft',
+    'icon': 'pi pi-microsoft',
+    'kind': 'oauth',
+}
+_GITHUB = {
+    'id': 'b1-github',
+    'type': 'github',
+    'label': 'GitHub',
+    'icon': 'pi pi-github',
+    'kind': 'oauth',
+}
+
+
 async def _call() -> dict:
     request = MagicMock()
     request.headers = {'origin': 'https://app.example.com'}
@@ -44,21 +68,15 @@ async def _call() -> dict:
 @pytest.mark.parametrize(
     'methods,expected_providers,expected_password',
     [
-        # Bare ids
-        (['github', 'google'], ['github', 'google'], False),
-        (['password', 'github'], ['github'], True),
-        # Objects, provider named under any of the accepted keys
+        ([_BASIC, _MICROSOFT, _GITHUB], ['microsoft', 'github'], True),
+        ([_BASIC], [], True),
+        ([_MICROSOFT], ['microsoft'], False),
+        # Duplicates collapse; unknown kinds and non-dict entries are skipped
         (
-            [{'providerId': 'github'}, {'provider': 'google'}],
-            ['github', 'google'],
+            [_GITHUB, _GITHUB, {'type': 'saml', 'kind': 'sso'}, 'github', None],
+            ['github'],
             False,
         ),
-        ([{'id': 'gitlab'}, {'type': 'password'}], ['gitlab'], True),
-        # Explicitly disabled entries are dropped
-        ([{'providerId': 'github', 'enabled': False}], [], False),
-        # Duplicates collapse, unknown shapes are skipped
-        (['github', 'github', 42, None], ['github'], False),
-        # Nothing usable
         ([], [], False),
         (None, [], False),
         ('github', [], False),
@@ -85,7 +103,7 @@ async def test_scopes_request_to_the_configured_organization():
     org = {'id': 'o1', 'slug': 'acme', 'name': 'Acme', 'logo': None}
     resp = _response(
         {
-            'methods': ['password', 'github'],
+            'methods': [_BASIC, _GITHUB],
             'inviteOnly': True,
             'organization': org,
         }
@@ -112,7 +130,7 @@ async def test_scopes_request_to_the_configured_organization():
 
 
 async def test_password_only_org_reports_no_providers():
-    patcher, _ = _patch_get(_response({'methods': ['password'], 'inviteOnly': False}))
+    patcher, _ = _patch_get(_response({'methods': [_BASIC], 'inviteOnly': False}))
     with (
         patch.object(auth_routes, 'BETTER_AUTH_URL', 'https://auth.example.com'),
         patcher,
@@ -124,7 +142,7 @@ async def test_password_only_org_reports_no_providers():
 
 
 async def test_social_only_org_disables_password():
-    patcher, _ = _patch_get(_response({'methods': [{'providerId': 'microsoft'}]}))
+    patcher, _ = _patch_get(_response({'methods': [_MICROSOFT]}))
     with (
         patch.object(auth_routes, 'BETTER_AUTH_URL', 'https://auth.example.com'),
         patcher,
