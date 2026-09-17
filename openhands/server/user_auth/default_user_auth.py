@@ -6,7 +6,6 @@
 # Unless you are working on deprecation, please avoid extending this legacy file and consult the V1 codepaths above.
 # Tag: Legacy-V0
 # This module belongs to the old V0 web server. The V1 application server lives under openhands/app_server/.
-import asyncio
 import json
 import logging
 import os
@@ -205,7 +204,11 @@ class DefaultUserAuth(UserAuth):
         return secret_store
 
     async def _fetch_auth_server_secrets(self) -> Secrets | None:
-        """Fetch user secrets from the Better Auth server's secrets API."""
+        """Fetch user secrets from the Better Auth server's secrets API.
+
+        `/api/secrets/resolve-all` returns every secret visible to the session
+        in one call: `{"secrets": [{"key", "secret", "level", "scope"}, ...]}`.
+        """
         better_auth_url = os.environ.get('BETTER_AUTH_URL', '').rstrip('/')
         if not better_auth_url or not self._session_cookie:
             return None
@@ -222,67 +225,44 @@ class DefaultUserAuth(UserAuth):
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # Fetch the list of secret keys
-                keys_resp = await client.get(
-                    f'{better_auth_url}/api/secrets/keys',
+                resp = await client.get(
+                    f'{better_auth_url}/api/secrets/resolve-all',
                     cookies={cookie_name: cookie_value},
                     headers=forwarded_headers,
                 )
-                if keys_resp.status_code != 200:
-                    logger.warning(
-                        'Failed to fetch secret keys from auth server: %s',
-                        keys_resp.status_code,
-                    )
-                    return None
+            if resp.status_code != 200:
+                logger.warning(
+                    'Failed to resolve secrets from auth server: %s',
+                    resp.status_code,
+                )
+                return None
 
-                keys_data = keys_resp.json()
-                keys: list[str] = keys_data.get('keys', [])
-                if not keys:
-                    return None
-
-                # Fetch individual secrets in parallel
-                async def _fetch_one(key: str) -> tuple[str, str | None]:
-                    try:
-                        resp = await client.get(
-                            f'{better_auth_url}/api/secrets/key/{key}',
-                            cookies={cookie_name: cookie_value},
-                            headers=forwarded_headers,
-                        )
-                        if resp.status_code != 200:
-                            return key, None
-                        data = resp.json()
-                        # Extract the secret value (field name: "secret" or "value")
-                        raw_secret = ''
-                        if isinstance(data, dict):
-                            raw_secret = (
-                                data.get('secret', '') or data.get('value', '') or ''
-                            )
-                        if not raw_secret:
-                            return key, None
-                        # The secret value may be JSON-stringified or a plain string
-                        try:
-                            parsed = json.loads(raw_secret)
-                            if isinstance(parsed, dict):
-                                token = parsed.get('token', '')
-                            else:
-                                token = str(parsed)
-                        except (json.JSONDecodeError, TypeError):
-                            token = raw_secret
-                        return key, token if token else None
-                    except Exception:
-                        logger.warning(
-                            'Failed to fetch secret %r from auth server',
-                            key,
-                            exc_info=True,
-                        )
-                        return key, None
-
-                results = await asyncio.gather(*[_fetch_one(k) for k in keys])
+            data = resp.json()
+            entries = data.get('secrets') if isinstance(data, dict) else None
+            if not isinstance(entries, list):
+                return None
 
             custom_secrets: dict[str, CustomSecret] = {}
-            for key, token_value in results:
-                if token_value:
-                    custom_secrets[key] = CustomSecret(secret=SecretStr(token_value))
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                key = entry.get('key')
+                raw_secret = entry.get('secret')
+                if not isinstance(key, str) or not key:
+                    continue
+                if not isinstance(raw_secret, str) or not raw_secret:
+                    continue
+                # The secret value may be JSON-stringified or a plain string
+                try:
+                    parsed = json.loads(raw_secret)
+                    if isinstance(parsed, dict):
+                        token = parsed.get('token', '')
+                    else:
+                        token = str(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    token = raw_secret
+                if token:
+                    custom_secrets[key] = CustomSecret(secret=SecretStr(token))
 
             if not custom_secrets:
                 return None
