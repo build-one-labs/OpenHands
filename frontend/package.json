@@ -30,6 +30,7 @@
     "lucide-react": "^0.562.0",
     "monaco-editor": "^0.55.1",
     "posthog-js": "^1.333.0",
+    "primeicons": "^7.0.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-hot-toast": "^2.6.0",

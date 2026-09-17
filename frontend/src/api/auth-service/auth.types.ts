@@ -14,9 +14,18 @@ export interface SignInOrganization {
   logo?: string | null;
 }
 
+export interface SignInProvider {
+  /** Social provider name passed to sign-in/social (e.g. "github") */
+  provider: string;
+  /** Button text as configured on the auth server */
+  label: string;
+  /** PrimeIcons class, e.g. "pi pi-github" */
+  icon: string | null;
+}
+
 export interface SignInOptions {
-  /** Social provider ids the organization has enabled */
-  providers: string[];
+  /** Social providers the organization has enabled */
+  providers: SignInProvider[];
   /** Whether email+password sign-in is offered */
   passwordEnabled: boolean;
   /** Whether the organization only admits invited members (no self sign-up) */

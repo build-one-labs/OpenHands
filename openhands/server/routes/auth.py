@@ -225,20 +225,23 @@ async def sign_in_social(request: Request):
     return response
 
 
-def _split_sign_in_methods(methods: object) -> tuple[list[str], bool]:
-    """Split Better Auth's `methods` into social provider ids and a password flag.
+def _split_sign_in_methods(methods: object) -> tuple[list[dict], bool]:
+    """Split Better Auth's `methods` into social providers and a password flag.
 
-    Entries look like `{"id": "b1-github", "type": "github", "kind": "oauth"}`.
+    Entries look like
+    `{"id": "b1-github", "type": "github", "label": "GitHub", "icon": "pi pi-github", "kind": "oauth"}`.
     `kind` is `local` for email+password and `oauth` for social providers; the
     social provider name Better Auth's sign-in/social expects is `type` (`id` is
-    the organization's configuration id, e.g. `b1-github`).
+    the organization's configuration id, e.g. `b1-github`). Each provider keeps
+    the server's `label` and `icon` (a PrimeIcons class) for its button.
     """
-    providers: list[str] = []
+    providers: list[dict] = []
     password_enabled = False
 
     if not isinstance(methods, list):
         return providers, password_enabled
 
+    seen: set[str] = set()
     for method in methods:
         if not isinstance(method, dict):
             continue
@@ -250,9 +253,18 @@ def _split_sign_in_methods(methods: object) -> tuple[list[str], bool]:
             kind == 'oauth'
             and isinstance(provider, str)
             and provider
-            and provider not in providers
+            and provider not in seen
         ):
-            providers.append(provider)
+            seen.add(provider)
+            label = method.get('label')
+            icon = method.get('icon')
+            providers.append(
+                {
+                    'provider': provider,
+                    'label': label if isinstance(label, str) and label else provider,
+                    'icon': icon if isinstance(icon, str) and icon else None,
+                }
+            )
 
     return providers, password_enabled
 

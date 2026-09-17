@@ -11,6 +11,7 @@ import { EmailVerificationModal } from "#/components/features/waitlist/email-ver
 import AuthService from "#/api/auth-service/auth-service.api";
 import { SignInOptions } from "#/api/auth-service/auth.types";
 import { I18nKey } from "#/i18n/declaration";
+import "primeicons/primeicons.css";
 
 function BetterAuthLoginForm({ returnTo }: { returnTo: string }) {
   const navigate = useNavigate();
@@ -91,9 +92,6 @@ function BetterAuthLoginForm({ returnTo }: { returnTo: string }) {
       setError(t(I18nKey.AUTH$OAUTH_FAILED));
     }
   };
-
-  const providerLabel = (provider: string) =>
-    provider.charAt(0).toUpperCase() + provider.slice(1);
 
   // eslint-disable-next-line i18next/no-literal-string
   const title = organization?.name || "Build.One";
@@ -232,15 +230,16 @@ function BetterAuthLoginForm({ returnTo }: { returnTo: string }) {
               </div>
             )}
             <div className="space-y-2">
-              {providers.map((provider) => (
+              {providers.map(({ provider, label, icon }) => (
                 <button
                   key={provider}
                   type="button"
                   onClick={() => handleOAuth(provider)}
-                  className="w-full py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg font-medium transition-colors border border-neutral-700"
+                  className="w-full py-3 flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg font-medium transition-colors border border-neutral-700"
                   data-testid={`oauth-${provider}`}
                 >
-                  {providerLabel(provider)}
+                  {icon && <i className={icon} aria-hidden="true" />}
+                  {label}
                 </button>
               ))}
             </div>

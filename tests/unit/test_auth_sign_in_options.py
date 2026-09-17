@@ -65,16 +65,34 @@ async def _call() -> dict:
     return json.loads(response.body)
 
 
+_MICROSOFT_BUTTON = {
+    'provider': 'microsoft',
+    'label': 'Microsoft',
+    'icon': 'pi pi-microsoft',
+}
+_GITHUB_BUTTON = {'provider': 'github', 'label': 'GitHub', 'icon': 'pi pi-github'}
+
+
 @pytest.mark.parametrize(
     'methods,expected_providers,expected_password',
     [
-        ([_BASIC, _MICROSOFT, _GITHUB], ['microsoft', 'github'], True),
+        (
+            [_BASIC, _MICROSOFT, _GITHUB],
+            [_MICROSOFT_BUTTON, _GITHUB_BUTTON],
+            True,
+        ),
         ([_BASIC], [], True),
-        ([_MICROSOFT], ['microsoft'], False),
+        ([_MICROSOFT], [_MICROSOFT_BUTTON], False),
         # Duplicates collapse; unknown kinds and non-dict entries are skipped
         (
             [_GITHUB, _GITHUB, {'type': 'saml', 'kind': 'sso'}, 'github', None],
-            ['github'],
+            [_GITHUB_BUTTON],
+            False,
+        ),
+        # Missing label falls back to the provider name, missing icon to None
+        (
+            [{'type': 'gitlab', 'kind': 'oauth'}],
+            [{'provider': 'gitlab', 'label': 'gitlab', 'icon': None}],
             False,
         ),
         ([], [], False),
@@ -122,7 +140,7 @@ async def test_scopes_request_to_the_configured_organization():
         == 'https://auth.example.com/acme/api/auth/b1/authentication'
     )
     assert body == {
-        'providers': ['github'],
+        'providers': [_GITHUB_BUTTON],
         'passwordEnabled': True,
         'inviteOnly': True,
         'organization': org,
@@ -148,7 +166,7 @@ async def test_social_only_org_disables_password():
         patcher,
     ):
         body = await _call()
-    assert body['providers'] == ['microsoft']
+    assert body['providers'] == [_MICROSOFT_BUTTON]
     assert body['passwordEnabled'] is False
 
 
