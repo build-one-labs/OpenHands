@@ -230,10 +230,10 @@ def _split_sign_in_methods(methods: object) -> tuple[list[dict], bool]:
 
     Entries look like
     `{"id": "b1-github", "type": "github", "label": "GitHub", "icon": "pi pi-github", "kind": "oauth"}`.
-    `kind` is `local` for email+password and `oauth` for social providers; the
-    social provider name Better Auth's sign-in/social expects is `type` (`id` is
-    the organization's configuration id, e.g. `b1-github`). Each provider keeps
-    the server's `label` and `icon` (a PrimeIcons class) for its button.
+    `kind` is `local` for email+password and `oauth` for social providers.
+    Sign-in/social must be called with `id` (e.g. `b1-github`): the auth server
+    rejects the bare `type`. Each provider keeps the server's `label` and `icon`
+    (a PrimeIcons class) for its button.
     """
     providers: list[dict] = []
     password_enabled = False
@@ -246,7 +246,7 @@ def _split_sign_in_methods(methods: object) -> tuple[list[dict], bool]:
         if not isinstance(method, dict):
             continue
         kind = method.get('kind')
-        provider = method.get('type')
+        provider = method.get('id')
         if kind == 'local':
             password_enabled = True
         elif (

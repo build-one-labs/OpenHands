@@ -15,7 +15,7 @@ export interface SignInOrganization {
 }
 
 export interface SignInProvider {
-  /** Social provider name passed to sign-in/social (e.g. "github") */
+  /** Provider id passed to sign-in/social (e.g. "b1-github") */
   provider: string;
   /** Button text as configured on the auth server */
   label: string;

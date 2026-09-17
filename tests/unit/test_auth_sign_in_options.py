@@ -66,11 +66,11 @@ async def _call() -> dict:
 
 
 _MICROSOFT_BUTTON = {
-    'provider': 'microsoft',
+    'provider': 'b1-microsoft',
     'label': 'Microsoft',
     'icon': 'pi pi-microsoft',
 }
-_GITHUB_BUTTON = {'provider': 'github', 'label': 'GitHub', 'icon': 'pi pi-github'}
+_GITHUB_BUTTON = {'provider': 'b1-github', 'label': 'GitHub', 'icon': 'pi pi-github'}
 
 
 @pytest.mark.parametrize(
@@ -85,14 +85,14 @@ _GITHUB_BUTTON = {'provider': 'github', 'label': 'GitHub', 'icon': 'pi pi-github
         ([_MICROSOFT], [_MICROSOFT_BUTTON], False),
         # Duplicates collapse; unknown kinds and non-dict entries are skipped
         (
-            [_GITHUB, _GITHUB, {'type': 'saml', 'kind': 'sso'}, 'github', None],
+            [_GITHUB, _GITHUB, {'id': 'b1-saml', 'kind': 'sso'}, 'b1-github', None],
             [_GITHUB_BUTTON],
             False,
         ),
-        # Missing label falls back to the provider name, missing icon to None
+        # Missing label falls back to the provider id, missing icon to None
         (
-            [{'type': 'gitlab', 'kind': 'oauth'}],
-            [{'provider': 'gitlab', 'label': 'gitlab', 'icon': None}],
+            [{'id': 'b1-gitlab', 'kind': 'oauth'}],
+            [{'provider': 'b1-gitlab', 'label': 'b1-gitlab', 'icon': None}],
             False,
         ),
         ([], [], False),
