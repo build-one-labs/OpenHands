@@ -25,6 +25,11 @@ BETTER_AUTH_URL = os.environ.get('BETTER_AUTH_URL', '').rstrip('/')
 BETTER_AUTH_SECRET = os.environ.get('BETTER_AUTH_SECRET', '')
 _SESSION_COOKIES = ('__Secure-b1.session_token', 'b1.session_token')
 
+# Sign-in method ids that mean email+password rather than a social provider
+_PASSWORD_METHOD_IDS = frozenset(
+    {'password', 'email', 'email-password', 'credential', 'credentials'}
+)
+
 # Regexes to strip Domain and Path attributes from proxied Set-Cookie headers
 _DOMAIN_ATTR_RE = re.compile(r';\s*domain=[^;]*', re.IGNORECASE)
 _PATH_ATTR_RE = re.compile(r';\s*path=[^;]*', re.IGNORECASE)
@@ -225,15 +230,103 @@ async def sign_in_social(request: Request):
     return response
 
 
+def _split_sign_in_methods(methods: object) -> tuple[list[str], bool]:
+    """Split Better Auth's `methods` into social provider ids and a password flag.
+
+    Entries arrive either as bare ids or as objects naming the provider under
+    one of providerId/provider/id/type, so accept both rather than pinning to a
+    single shape.
+    """
+    providers: list[str] = []
+    password_enabled = False
+
+    if not isinstance(methods, list):
+        return providers, password_enabled
+
+    for method in methods:
+        if isinstance(method, str):
+            name = method
+        elif isinstance(method, dict):
+            if method.get('enabled') is False:
+                continue
+            name = (
+                method.get('providerId')
+                or method.get('provider')
+                or method.get('id')
+                or method.get('type')
+                or ''
+            )
+        else:
+            continue
+
+        if not isinstance(name, str) or not name:
+            continue
+        if name.lower() in _PASSWORD_METHOD_IDS:
+            password_enabled = True
+        elif name not in providers:
+            providers.append(name)
+
+    return providers, password_enabled
+
+
 @app.get('/auth/providers')
-async def get_providers():
-    """Return available OAuth providers."""
+async def get_providers(request: Request):
+    """Return the sign-in options this deployment should offer.
+
+    Proxies Better Auth's /api/auth/b1/authentication. When BETTER_AUTH_URL
+    carries an organization suffix (`<origin>/<slug>`) the auth server strips
+    the prefix and scopes the answer to that organization; without a suffix the
+    deployment-wide options come back and `organization` is null.
+    """
     if not BETTER_AUTH_URL:
-        return JSONResponse(status_code=200, content={'providers': []})
+        return JSONResponse(
+            status_code=200,
+            content={
+                'providers': [],
+                'passwordEnabled': True,
+                'inviteOnly': False,
+                'organization': None,
+            },
+        )
+
+    origin = _request_origin(request)
+    proxy_headers = _build_proxy_headers(origin)
+
+    payload: object = {}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                _auth_url('/api/auth/b1/authentication'),
+                headers=proxy_headers,
+                timeout=10.0,
+            )
+        if resp.status_code == 200:
+            payload = resp.json()
+        else:
+            logger.warning(
+                'Sign-in options request rejected (%s): %s',
+                resp.status_code,
+                resp.text[:200],
+            )
+    except Exception as e:
+        logger.warning('Sign-in options request failed: %s', e)
+
+    if not isinstance(payload, dict):
+        payload = {}
+
+    providers, password_enabled = _split_sign_in_methods(payload.get('methods'))
 
     return JSONResponse(
         status_code=200,
-        content={'providers': ['microsoft', 'github', 'google']},
+        content={
+            'providers': providers,
+            # An unreachable auth server leaves the org's real method list
+            # unknown; keep email/password rather than offering social buttons
+            # that would fail.
+            'passwordEnabled': password_enabled if payload else True,
+            'inviteOnly': bool(payload.get('inviteOnly', False)),
+            'organization': payload.get('organization'),
+        },
     )
 
 

@@ -9,6 +9,7 @@ import { useEmailVerification } from "#/hooks/use-email-verification";
 import { LoginContent } from "#/components/features/auth/login-content";
 import { EmailVerificationModal } from "#/components/features/waitlist/email-verification-modal";
 import AuthService from "#/api/auth-service/auth-service.api";
+import { SignInOptions } from "#/api/auth-service/auth.types";
 import { I18nKey } from "#/i18n/declaration";
 
 function BetterAuthLoginForm({ returnTo }: { returnTo: string }) {
@@ -21,18 +22,31 @@ function BetterAuthLoginForm({ returnTo }: { returnTo: string }) {
   const [error, setError] = React.useState("");
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isSignUp, setIsSignUp] = React.useState(false);
-  const [providers, setProviders] = React.useState<string[]>([]);
+  const [signInOptions, setSignInOptions] = React.useState<SignInOptions>({
+    providers: [],
+    passwordEnabled: true,
+    inviteOnly: false,
+    organization: null,
+  });
   const emailRef = React.useRef<HTMLInputElement>(null);
+  const { providers, passwordEnabled, inviteOnly, organization } =
+    signInOptions;
 
   React.useEffect(() => {
     emailRef.current?.focus();
   }, []);
 
   React.useEffect(() => {
-    AuthService.getProviders()
-      .then(setProviders)
-      .catch(() => setProviders([]));
+    // Leave the defaults in place on failure: email/password still works even
+    // when the org's method list can't be read.
+    AuthService.getSignInOptions()
+      .then(setSignInOptions)
+      .catch(() => {});
   }, []);
+
+  React.useEffect(() => {
+    if (inviteOnly || !passwordEnabled) setIsSignUp(false);
+  }, [inviteOnly, passwordEnabled]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +95,9 @@ function BetterAuthLoginForm({ returnTo }: { returnTo: string }) {
   const providerLabel = (provider: string) =>
     provider.charAt(0).toUpperCase() + provider.slice(1);
 
+  // eslint-disable-next-line i18next/no-literal-string
+  const title = organization?.name || "Build.One";
+
   return (
     <main
       className="min-h-screen flex items-center justify-center bg-base p-4"
@@ -88,95 +105,132 @@ function BetterAuthLoginForm({ returnTo }: { returnTo: string }) {
     >
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          {/* eslint-disable-next-line i18next/no-literal-string */}
-          <h1 className="text-2xl font-bold text-white">Build.One</h1>
+          {organization?.logo && (
+            <img
+              src={organization.logo}
+              alt={organization.name}
+              className="h-12 mx-auto mb-3 object-contain"
+              data-testid="org-logo"
+            />
+          )}
+          <h1
+            className="text-2xl font-bold text-white"
+            data-testid="login-title"
+          >
+            {title}
+          </h1>
           <p className="text-neutral-400 mt-2">
             {isSignUp
               ? t(I18nKey.AUTH$CREATE_ACCOUNT)
               : t(I18nKey.AUTH$SIGN_IN_TO_CONTINUE)}
           </p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {isSignUp && (
+        {passwordEnabled && (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isSignUp && (
+              <div>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={t(I18nKey.AUTH$NAME_PLACEHOLDER)}
+                  className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+                  data-testid="name-input"
+                />
+              </div>
+            )}
             <div>
               <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t(I18nKey.AUTH$NAME_PLACEHOLDER)}
+                ref={emailRef}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t(I18nKey.AUTH$EMAIL_PLACEHOLDER)}
                 className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
-                data-testid="name-input"
+                required
+                data-testid="email-input"
               />
             </div>
-          )}
-          <div>
-            <input
-              ref={emailRef}
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t(I18nKey.AUTH$EMAIL_PLACEHOLDER)}
-              className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
-              required
-              data-testid="email-input"
-            />
-          </div>
-          <div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={t(I18nKey.FEEDBACK$PASSWORD)}
-              className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
-              required
-              data-testid="password-input"
-            />
-          </div>
-          {error && (
-            <p className="text-red-400 text-sm" data-testid="login-error">
-              {error}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={isSubmitting || !email || !password}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-            data-testid="login-submit"
-          >
-            {isSubmitting && t(I18nKey.AUTH$SIGNING_IN)}
-            {!isSubmitting && isSignUp && t(I18nKey.AUTH$SIGN_UP)}
-            {!isSubmitting && !isSignUp && t(I18nKey.AUTH$SIGN_IN)}
-          </button>
-        </form>
+            <div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t(I18nKey.FEEDBACK$PASSWORD)}
+                className="w-full px-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:border-blue-500"
+                required
+                data-testid="password-input"
+              />
+            </div>
+            {error && (
+              <p className="text-red-400 text-sm" data-testid="login-error">
+                {error}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={isSubmitting || !email || !password}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+              data-testid="login-submit"
+            >
+              {isSubmitting && t(I18nKey.AUTH$SIGNING_IN)}
+              {!isSubmitting && isSignUp && t(I18nKey.AUTH$SIGN_UP)}
+              {!isSubmitting && !isSignUp && t(I18nKey.AUTH$SIGN_IN)}
+            </button>
+          </form>
+        )}
 
-        <div className="mt-4 text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setError("");
-            }}
-            className="text-blue-400 hover:text-blue-300 text-sm"
-            data-testid="toggle-sign-up"
+        {passwordEnabled && !inviteOnly && (
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(!isSignUp);
+                setError("");
+              }}
+              className="text-blue-400 hover:text-blue-300 text-sm"
+              data-testid="toggle-sign-up"
+            >
+              {isSignUp
+                ? t(I18nKey.AUTH$ALREADY_HAVE_ACCOUNT)
+                : t(I18nKey.AUTH$DONT_HAVE_ACCOUNT)}
+            </button>
+          </div>
+        )}
+
+        {/* The in-form error is unreachable when the org offers social only */}
+        {!passwordEnabled && error && (
+          <p
+            className="text-red-400 text-sm mt-4 text-center"
+            data-testid="login-error"
           >
-            {isSignUp
-              ? t(I18nKey.AUTH$ALREADY_HAVE_ACCOUNT)
-              : t(I18nKey.AUTH$DONT_HAVE_ACCOUNT)}
-          </button>
-        </div>
+            {error}
+          </p>
+        )}
+
+        {!passwordEnabled && providers.length === 0 && (
+          <p
+            className="text-neutral-400 text-sm mt-4 text-center"
+            data-testid="no-sign-in-methods"
+          >
+            {t(I18nKey.AUTH$NO_PROVIDERS_CONFIGURED)}
+          </p>
+        )}
 
         {providers.length > 0 && (
           <div className="mt-6">
-            <div className="relative mb-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-neutral-700" />
+            {passwordEnabled && (
+              <div className="relative mb-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-neutral-700" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-base text-neutral-400">
+                    {t(I18nKey.AUTH$OR_CONTINUE_WITH)}
+                  </span>
+                </div>
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-base text-neutral-400">
-                  {t(I18nKey.AUTH$OR_CONTINUE_WITH)}
-                </span>
-              </div>
-            </div>
+            )}
             <div className="space-y-2">
               {providers.map((provider) => (
                 <button
