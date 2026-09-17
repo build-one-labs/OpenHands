@@ -92,6 +92,30 @@ async def test_unwraps_json_stringified_token():
     assert _values(secrets) == {'github-token': 'ghp'}
 
 
+async def test_unwraps_json_value_wrapper():
+    credentials = '{"claudeAiOauth": {"accessToken": "x"}}'
+    secrets, _ = await _fetch(
+        _response(
+            {
+                'secrets': [
+                    {
+                        'key': 'linear-api-key',
+                        'secret': json.dumps({'value': 'lin_api_123'}),
+                    },
+                    {
+                        'key': 'claude-code-credentials',
+                        'secret': json.dumps({'value': credentials}),
+                    },
+                ]
+            }
+        )
+    )
+    assert _values(secrets) == {
+        'linear-api-key': 'lin_api_123',
+        'claude-code-credentials': credentials,
+    }
+
+
 async def test_skips_malformed_and_empty_entries():
     secrets, _ = await _fetch(
         _response(

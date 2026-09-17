@@ -252,11 +252,13 @@ class DefaultUserAuth(UserAuth):
                     continue
                 if not isinstance(raw_secret, str) or not raw_secret:
                     continue
-                # The secret value may be JSON-stringified or a plain string
+                # The secret may be a plain string or JSON wrapping it as
+                # {"value": "..."} (or the older {"token": "..."})
                 try:
                     parsed = json.loads(raw_secret)
                     if isinstance(parsed, dict):
-                        token = parsed.get('token', '')
+                        wrapped = parsed.get('value') or parsed.get('token') or ''
+                        token = wrapped if isinstance(wrapped, str) else ''
                     else:
                         token = str(parsed)
                 except (json.JSONDecodeError, TypeError):
