@@ -1,5 +1,9 @@
 import { openHands } from "../open-hands-axios";
-import { AuthenticateResponse, GitHubAccessTokenResponse } from "./auth.types";
+import {
+  AuthenticateResponse,
+  GitHubAccessTokenResponse,
+  SignInOptions,
+} from "./auth.types";
 import { GetConfigResponse } from "../option-service/option.types";
 
 /**
@@ -62,14 +66,20 @@ class AuthService {
   }
 
   /**
-   * Get available OAuth providers from the server
-   * @returns Array of provider names
+   * Get the sign-in options this deployment should offer. When the server is
+   * configured with an organization-scoped auth URL these are that
+   * organization's methods; otherwise they are the deployment-wide ones.
    */
-  static async getProviders(): Promise<string[]> {
-    const { data } = await openHands.get<{ providers: string[] }>(
+  static async getSignInOptions(): Promise<SignInOptions> {
+    const { data } = await openHands.get<Partial<SignInOptions>>(
       "/api/auth/providers",
     );
-    return data.providers || [];
+    return {
+      providers: data.providers || [],
+      passwordEnabled: data.passwordEnabled !== false,
+      inviteOnly: data.inviteOnly === true,
+      organization: data.organization || null,
+    };
   }
 
   /**

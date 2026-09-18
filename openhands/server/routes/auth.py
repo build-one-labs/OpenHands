@@ -225,15 +225,108 @@ async def sign_in_social(request: Request):
     return response
 
 
+def _split_sign_in_methods(methods: object) -> tuple[list[dict], bool]:
+    """Split Better Auth's `methods` into social providers and a password flag.
+
+    Entries look like
+    `{"id": "b1-github", "type": "github", "label": "GitHub", "icon": "pi pi-github", "kind": "oauth"}`.
+    `kind` is `local` for email+password and `oauth` for social providers.
+    Sign-in/social must be called with `id` (e.g. `b1-github`): the auth server
+    rejects the bare `type`. Each provider keeps the server's `label` and `icon`
+    (a PrimeIcons class) for its button.
+    """
+    providers: list[dict] = []
+    password_enabled = False
+
+    if not isinstance(methods, list):
+        return providers, password_enabled
+
+    seen: set[str] = set()
+    for method in methods:
+        if not isinstance(method, dict):
+            continue
+        kind = method.get('kind')
+        provider = method.get('id')
+        if kind == 'local':
+            password_enabled = True
+        elif (
+            kind == 'oauth'
+            and isinstance(provider, str)
+            and provider
+            and provider not in seen
+        ):
+            seen.add(provider)
+            label = method.get('label')
+            icon = method.get('icon')
+            providers.append(
+                {
+                    'provider': provider,
+                    'label': label if isinstance(label, str) and label else provider,
+                    'icon': icon if isinstance(icon, str) and icon else None,
+                }
+            )
+
+    return providers, password_enabled
+
+
 @app.get('/auth/providers')
-async def get_providers():
-    """Return available OAuth providers."""
+async def get_providers(request: Request):
+    """Return the sign-in options this deployment should offer.
+
+    Proxies Better Auth's /api/auth/b1/authentication. When BETTER_AUTH_URL
+    carries an organization suffix (`<origin>/<slug>`) the auth server strips
+    the prefix and scopes the answer to that organization; without a suffix the
+    deployment-wide options come back and `organization` is null.
+    """
     if not BETTER_AUTH_URL:
-        return JSONResponse(status_code=200, content={'providers': []})
+        return JSONResponse(
+            status_code=200,
+            content={
+                'providers': [],
+                'passwordEnabled': True,
+                'inviteOnly': False,
+                'organization': None,
+            },
+        )
+
+    origin = _request_origin(request)
+    proxy_headers = _build_proxy_headers(origin)
+
+    payload: object = {}
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                _auth_url('/api/auth/b1/authentication'),
+                headers=proxy_headers,
+                timeout=10.0,
+            )
+        if resp.status_code == 200:
+            payload = resp.json()
+        else:
+            logger.warning(
+                'Sign-in options request rejected (%s): %s',
+                resp.status_code,
+                resp.text[:200],
+            )
+    except Exception as e:
+        logger.warning('Sign-in options request failed: %s', e)
+
+    if not isinstance(payload, dict):
+        payload = {}
+
+    providers, password_enabled = _split_sign_in_methods(payload.get('methods'))
 
     return JSONResponse(
         status_code=200,
-        content={'providers': ['microsoft', 'github', 'google']},
+        content={
+            'providers': providers,
+            # An unreachable auth server leaves the org's real method list
+            # unknown; keep email/password rather than offering social buttons
+            # that would fail.
+            'passwordEnabled': password_enabled if payload else True,
+            'inviteOnly': bool(payload.get('inviteOnly', False)),
+            'organization': payload.get('organization'),
+        },
     )
 
 
