@@ -1167,6 +1167,12 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                 'claude-opus-4-5',
                 'claude-opus-4-6',
                 'claude-sonnet-4',
+                # Opus 5.5 / Fable 5.1 reject sampling params outright (400).
+                'claude-opus-5-5',
+                'claude-fable-5-1',
+                # GPT-6 reasoning models; litellm does not flag them as
+                # reasoning-effort models, so the SDK would forward top_p.
+                'gpt-6',
             )
         )
 

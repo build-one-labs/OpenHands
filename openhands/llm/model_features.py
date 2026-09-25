@@ -77,10 +77,13 @@ FUNCTION_CALLING_PATTERNS: list[str] = [
     'claude-3-5-haiku*',
     'claude-sonnet-4*',
     'claude-opus-4*',
+    'claude-opus-5*',
+    'claude-fable-5*',
     # OpenAI families
     'gpt-4o*',
     'gpt-4.1',
     'gpt-5*',
+    'gpt-6*',
     # o-series (keep exact o1 support per existing list)
     'o1-2024-12-17',
     'o3*',
@@ -117,6 +120,7 @@ REASONING_EFFORT_PATTERNS: list[str] = [
     'gemini-2.5-pro',
     'gemini-3.1-pro*',
     'gpt-5*',
+    'gpt-6*',
     # DeepSeek reasoning family
     'deepseek-r1-0528*',
     'claude-sonnet-4-5*',
@@ -143,6 +147,8 @@ PROMPT_CACHE_PATTERNS: list[str] = [
     # input token bills uncached, cancelling the tier's price advantage.
     'claude-sonnet-5*',
     'claude-opus-4*',
+    'claude-opus-5*',
+    'claude-fable-5*',
     'gemini-3.1-pro*',
     # Kimi series - verified via litellm config
     'kimi-k2.5',
