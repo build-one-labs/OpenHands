@@ -542,6 +542,29 @@ class TestLiveStatusAppConversationService:
         assert llm.top_p == 1.0
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        'model',
+        [
+            'anthropic/claude-opus-5-5',
+            'anthropic/claude-fable-5-1',
+            'openai/gpt-6-astra',
+            'openai/gpt-6-sol',
+            'openai/gpt-6-luna',
+        ],
+    )
+    async def test_configure_llm_and_mcp_new_models_suppress_top_p(self, model):
+        """Opus 5.5 / Fable 5.1 reject sampling params and GPT-6 is a reasoning
+        family, so top_p must not be sent."""
+        self.mock_user.llm_model = model
+        self.mock_user.llm_base_url = None
+        self.mock_user_context.get_mcp_api_key.return_value = None
+
+        llm, _ = await self.service._configure_llm_and_mcp(self.mock_user, None)
+
+        assert llm.model == model
+        assert llm.top_p is None
+
+    @pytest.mark.asyncio
     async def test_configure_llm_and_mcp_with_user_default_model(self):
         """Test _configure_llm_and_mcp using user's default model."""
         # Arrange

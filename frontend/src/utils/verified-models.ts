@@ -8,6 +8,11 @@ export const VERIFIED_PROVIDERS = [
   "clarifai",
 ];
 export const VERIFIED_MODELS = [
+  "claude-opus-5-5",
+  "claude-fable-5-1",
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
   "claude-opus-4-6",
   "claude-sonnet-4-6",
   "claude-sonnet-4-5-20250929",
@@ -30,6 +35,9 @@ export const VERIFIED_MODELS = [
 // LiteLLM does not return OpenAI models with the provider, so we list them here to set them ourselves for consistency
 // (e.g., they return `gpt-4o` instead of `openai/gpt-4o`)
 export const VERIFIED_OPENAI_MODELS = [
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
   "gpt-5.2",
   "gpt-5.2-codex",
   "gpt-4o",
@@ -39,6 +47,8 @@ export const VERIFIED_OPENAI_MODELS = [
 // LiteLLM does not return the compatible Anthropic models with the provider, so we list them here to set them ourselves
 // (e.g., they return `claude-3-5-sonnet-20241022` instead of `anthropic/claude-3-5-sonnet-20241022`)
 export const VERIFIED_ANTHROPIC_MODELS = [
+  "claude-opus-5-5",
+  "claude-fable-5-1",
   "claude-opus-4-6",
   "claude-sonnet-4-5-20250929",
   "claude-3-5-sonnet-20240620",
